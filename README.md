@@ -6,13 +6,15 @@ A clean terminal environment for KDE Plasma (Zsh / Bash)
 
 
 ## Preview
-![Desktop](screenshots/desktop.png)
 
 
 ![Fastfetch 0](screenshots/fastfetch0.png)
 
 
 ![Fastfetch1](screenshots/fastfetch1.png)
+
+
+![Konsole](screenshots/konsole.png)
 
 ## Installation
 
