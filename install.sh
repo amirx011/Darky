@@ -213,7 +213,7 @@ install_fastfetch() {
 # ─── Step 5: Starship ─────────────────────────
 install_starship() {
     echo ""
-    echo -e "${BOLD}━━━ Step 5: Starship Prompt ━━━${RESET}"
+    echo -e "\( {BOLD}━━━ Step 5: Starship Prompt ━━━ \){RESET}"
 
     if ! command -v starship &>/dev/null; then
         if ask "  Install Starship? (via official install.sh)"; then
@@ -221,11 +221,7 @@ install_starship() {
             if curl -sS --connect-timeout 15 https://starship.rs/install.sh | sh; then
                 success "Starship installed."
             else
-                warn "Starship installation failed. Possible causes:"
-                warn "  - No internet connection"
-                warn "  - curl not available"
-                warn "You can install it later with: curl -sS https://starship.rs/install.sh | sh"
-                warn "Skipped Starship installation."
+                warn "Starship installation failed."
                 return
             fi
         else
@@ -236,8 +232,9 @@ install_starship() {
         success "Starship is already installed."
     fi
 
-    if ask "  Copy starship.toml to ~/.config/starship.toml?"; then
-        cp "$TMP_DIR/starship.toml" ~/.config/starship.toml
+    if ask "  Copy starship.toml to \~/.config/starship.toml?"; then
+        mkdir -p \~/.config
+        cp "$TMP_DIR/starship.toml" \~/.config/starship.toml
         success "starship.toml copied."
     else
         warn "Skipped starship.toml."
@@ -251,26 +248,27 @@ install_starship() {
         SHELL_RC="$HOME/.bashrc"
         INIT_LINE='eval "$(starship init bash)"'
     else
-        warn "Unknown shell ($CURRENT_SHELL). Add Starship init manually."
+        warn "Unknown shell. Add manually."
         return
     fi
 
-    if grep -qF "starship init" "$SHELL_RC" 2>/dev/null; then
-        success "Starship init already present in $SHELL_RC."
-    else
+    # --- رفع مشکل PATH ---
+    if ! grep -q 'cargo/bin' "$SHELL_RC" 2>/dev/null; then
+        cat >> "$SHELL_RC" << 'EOF'
+
+# Rust / Cargo binaries (for Starship)
+export PATH="$HOME/.cargo/bin:$PATH"
+EOF
+    fi
+
+    if ! grep -q "starship init" "$SHELL_RC" 2>/dev/null; then
         if ask "  Add Starship init to $SHELL_RC?"; then
-            echo 'export PATH="/usr/local/bin:$PATH"' >> "$SHELL_RC"
             echo "$INIT_LINE" >> "$SHELL_RC"
             success "Starship init added to $SHELL_RC."
         fi
+    else
+        success "Starship init already present."
     fi
-
-export PATH="$HOME/.cargo/bin:$PATH"
-if command -v starship &> /dev/null; then
-    success "Starship is ready."
-else
-    warn "Starship installed but not in PATH. Please restart terminal or run: source \~/.zshrc"
-fi
 }
 
 # ─── Cleanup ──────────────────────────────────
