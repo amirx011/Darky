@@ -103,11 +103,12 @@ clone_repo() {
     success "Repository cloned."
 }
 
-# ─── Step 0: Zsh ──────────────────────────────
+# ─── Step 0: Zsh & Environment Setup ──────────────
 install_zsh() {
     echo ""
-    echo -e "${BOLD}━━━ Step 0: Zsh Shell ━━━${RESET}"
+    echo -e "${BOLD}━━━ Step 0: Zsh & Environment Setup ━━━${RESET}"
 
+    # ── بخش اول: نصب و تنظیم Zsh (کد اصلی شما) ──
     if ! command -v zsh &>/dev/null; then
         info "zsh is not installed. Installing..."
         if [[ "$PKG_MANAGER" == "pacman" ]]; then
@@ -122,22 +123,40 @@ install_zsh() {
 
     if [[ "$SHELL" == *"zsh"* ]]; then
         success "zsh is already your default shell."
-        return
+    else
+        ZSH_PATH="$(command -v zsh)"
+        if ! grep -qF "$ZSH_PATH" /etc/shells; then
+            echo "$ZSH_PATH" | sudo tee -a /etc/shells > /dev/null
+            info "Added $ZSH_PATH to /etc/shells."
+        fi
+        info "Switching default shell to zsh (current: $(basename "$SHELL"))..."
+        chsh -s "$ZSH_PATH"
+        success "Default shell changed to zsh. Takes effect on next login."
     fi
 
-    ZSH_PATH="$(command -v zsh)"
-    if ! grep -qF "$ZSH_PATH" /etc/shells; then
-        echo "$ZSH_PATH" | sudo tee -a /etc/shells > /dev/null
-        info "Added $ZSH_PATH to /etc/shells."
-    fi
-
-    info "Switching default shell to zsh (current: $(basename "$SHELL"))..."
-    chsh -s "$ZSH_PATH"
-    success "Default shell changed to zsh. Takes effect on next login."
-
+    # تضمین وجود .zshrc قبل از هرگونه نوشتن در آن
     if [ ! -f "$HOME/.zshrc" ]; then
         touch "$HOME/.zshrc"
         info "Created empty ~/.zshrc."
+    fi
+
+    # ── بخش دوم: تنظیم Cargo PATH (افزوده شده) ──
+    local CARGO_BIN="$HOME/.cargo/bin"
+    
+    # ۱. اضافه کردن موقت به سشن فعلی (حیاتی برای اینکه Starship در Step 5 بلافاصله کار کند)
+    export PATH="$CARGO_BIN:$PATH"
+    info "Temporarily added $CARGO_BIN to current session PATH."
+
+    # ۲. اضافه کردن دائمی به .zshrc (فقط اگر قبلاً اضافه نشده باشد)
+    if ! grep -qF '.cargo/bin' "$HOME/.zshrc" 2>/dev/null; then
+        {
+            echo ''
+            echo '# Cargo / Rust binaries (Added by Darky Installer)'
+            echo "export PATH=\"$CARGO_BIN:\$PATH\""
+        } >> "$HOME/.zshrc"
+        success "Permanently added Cargo bin to PATH in ~/.zshrc"
+    else
+        info "Cargo bin already exists in ~/.zshrc. Skipping."
     fi
 }
 
