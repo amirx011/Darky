@@ -103,12 +103,11 @@ clone_repo() {
     success "Repository cloned."
 }
 
-# ─── Step 0: Zsh & Environment Setup ──────────────
+# ─── Step 0: Zsh ──────────────────────────────
 install_zsh() {
     echo ""
-    echo -e "${BOLD}━━━ Step 0: Zsh & Environment Setup ━━━${RESET}"
+    echo -e "${BOLD}━━━ Step 0: Zsh Shell ━━━${RESET}"
 
-    # ── بخش اول: نصب و تنظیم Zsh (کد اصلی شما) ──
     if ! command -v zsh &>/dev/null; then
         info "zsh is not installed. Installing..."
         if [[ "$PKG_MANAGER" == "pacman" ]]; then
@@ -123,40 +122,22 @@ install_zsh() {
 
     if [[ "$SHELL" == *"zsh"* ]]; then
         success "zsh is already your default shell."
-    else
-        ZSH_PATH="$(command -v zsh)"
-        if ! grep -qF "$ZSH_PATH" /etc/shells; then
-            echo "$ZSH_PATH" | sudo tee -a /etc/shells > /dev/null
-            info "Added $ZSH_PATH to /etc/shells."
-        fi
-        info "Switching default shell to zsh (current: $(basename "$SHELL"))..."
-        chsh -s "$ZSH_PATH"
-        success "Default shell changed to zsh. Takes effect on next login."
+        return
     fi
 
-    # تضمین وجود .zshrc قبل از هرگونه نوشتن در آن
+    ZSH_PATH="$(command -v zsh)"
+    if ! grep -qF "$ZSH_PATH" /etc/shells; then
+        echo "$ZSH_PATH" | sudo tee -a /etc/shells > /dev/null
+        info "Added $ZSH_PATH to /etc/shells."
+    fi
+
+    info "Switching default shell to zsh (current: $(basename "$SHELL"))..."
+    chsh -s "$ZSH_PATH"
+    success "Default shell changed to zsh. Takes effect on next login."
+
     if [ ! -f "$HOME/.zshrc" ]; then
         touch "$HOME/.zshrc"
         info "Created empty ~/.zshrc."
-    fi
-
-    # ── بخش دوم: تنظیم Cargo PATH (افزوده شده) ──
-    local CARGO_BIN="$HOME/.cargo/bin"
-    
-    # ۱. اضافه کردن موقت به سشن فعلی (حیاتی برای اینکه Starship در Step 5 بلافاصله کار کند)
-    export PATH="$CARGO_BIN:$PATH"
-    info "Temporarily added $CARGO_BIN to current session PATH."
-
-    # ۲. اضافه کردن دائمی به .zshrc (فقط اگر قبلاً اضافه نشده باشد)
-    if ! grep -qF '.cargo/bin' "$HOME/.zshrc" 2>/dev/null; then
-        {
-            echo ''
-            echo '# Cargo / Rust binaries (Added by Darky Installer)'
-            echo "export PATH=\"$CARGO_BIN:\$PATH\""
-        } >> "$HOME/.zshrc"
-        success "Permanently added Cargo bin to PATH in ~/.zshrc"
-    else
-        info "Cargo bin already exists in ~/.zshrc. Skipping."
     fi
 }
 
@@ -235,13 +216,16 @@ install_starship() {
     echo -e "${BOLD}━━━ Step 5: Starship Prompt ━━━${RESET}"
 
     if ! command -v starship &>/dev/null; then
-        if ask "Install Starship? (via official install.sh)"; then
+        if ask "  Install Starship? (via official install.sh)"; then
             info "Installing Starship..."
-            # نصب با فلگ -y برای جلوگیری از پرسش تعاملی
-            if curl -sS --connect-timeout 15 https://starship.rs/install.sh | sh -s -- -y; then
+            if curl -sS --connect-timeout 15 https://starship.rs/install.sh | sh; then
                 success "Starship installed."
             else
-                warn "Starship installation failed."
+                warn "Starship installation failed. Possible causes:"
+                warn "  - No internet connection"
+                warn "  - curl not available"
+                warn "You can install it later with: curl -sS https://starship.rs/install.sh | sh"
+                warn "Skipped Starship installation."
                 return
             fi
         else
@@ -252,24 +236,33 @@ install_starship() {
         success "Starship is already installed."
     fi
 
-    # ✅ اصلاح ۱: اضافه کردن init به .zshrc
-    if [[ "$SHELL" == *"zsh"* ]] || [[ -n "$ZSH_VERSION" ]]; then
-        if ! grep -q "starship init zsh" ~/.zshrc 2>/dev/null; then
-            echo '' >> ~/.zshrc
-            echo '# Starship Prompt' >> ~/.zshrc
-            echo 'eval "$(starship init zsh)"' >> ~/.zshrc
-            success "Added starship init to ~/.zshrc"
-        fi
-    fi
-
-    # ✅ اصلاح ۲: کپی کانفیگ صحیح Starship (نه Fastfetch!)
-    if ask "Copy starship.toml to ~/.config/?"; then
-        mkdir -p ~/.config
-        # فرض بر این است که فایل starship.toml در TMP_DIR وجود دارد
+    if ask "  Copy starship.toml to ~/.config/starship.toml?"; then
         cp "$TMP_DIR/starship.toml" ~/.config/starship.toml
         success "starship.toml copied."
     else
-        warn "Skipped starship config."
+        warn "Skipped starship.toml."
+    fi
+
+    CURRENT_SHELL=$(basename "$SHELL")
+    if [[ "$CURRENT_SHELL" == "zsh" ]]; then
+        SHELL_RC="$HOME/.zshrc"
+        INIT_LINE='eval "$(starship init zsh)"'
+    elif [[ "$CURRENT_SHELL" == "bash" ]]; then
+        SHELL_RC="$HOME/.bashrc"
+        INIT_LINE='eval "$(starship init bash)"'
+    else
+        warn "Unknown shell ($CURRENT_SHELL). Add Starship init manually."
+        return
+    fi
+
+    if grep -qF "starship init" "$SHELL_RC" 2>/dev/null; then
+        success "Starship init already present in $SHELL_RC."
+    else
+        if ask "  Add Starship init to $SHELL_RC?"; then
+            echo 'export PATH="/usr/local/bin:$PATH"' >> "$SHELL_RC"
+            echo "$INIT_LINE" >> "$SHELL_RC"
+            success "Starship init added to $SHELL_RC."
+        fi
     fi
 }
 
