@@ -205,6 +205,70 @@ cleanup() {
     rm -rf "$TMP_DIR"
 }
 
+# ─── Auto-apply: set Darky as default Konsole profile ─────
+apply_konsole_profile() {
+    local profile_name="Darky"
+    local konsolerc="$HOME/.config/konsolerc"
+
+    # Set default profile via kwriteconfig5 if available
+    if command -v kwriteconfig5 &>/dev/null; then
+        kwriteconfig5 --file "$konsolerc" --group "Desktop Entry" --key "DefaultProfile" "${profile_name}.profile"
+        success "Darky set as default Konsole profile."
+    else
+        # Fallback: edit konsolerc directly
+        if [ -f "$konsolerc" ]; then
+            if grep -q "DefaultProfile" "$konsolerc"; then
+                sed -i "s/^DefaultProfile=.*/DefaultProfile=${profile_name}.profile/" "$konsolerc"
+            else
+                # Add under [Desktop Entry] section or append
+                if grep -q "\[Desktop Entry\]" "$konsolerc"; then
+                    sed -i "/\[Desktop Entry\]/a DefaultProfile=${profile_name}.profile" "$konsolerc"
+                else
+                    echo -e "\n[Desktop Entry]\nDefaultProfile=${profile_name}.profile" >> "$konsolerc"
+                fi
+            fi
+        else
+            mkdir -p "$(dirname "$konsolerc")"
+            echo -e "[Desktop Entry]\nDefaultProfile=${profile_name}.profile" > "$konsolerc"
+        fi
+        success "Darky set as default Konsole profile (manual edit)."
+    fi
+}
+
+# ─── Auto-apply: source shell rc in current session ───────
+apply_shell_rc() {
+    CURRENT_SHELL=$(basename "$SHELL")
+    if [[ "$CURRENT_SHELL" == "zsh" ]]; then
+        SHELL_RC="$HOME/.zshrc"
+    elif [[ "$CURRENT_SHELL" == "bash" ]]; then
+        SHELL_RC="$HOME/.bashrc"
+    else
+        return
+    fi
+
+    if [ -f "$SHELL_RC" ]; then
+        # shellcheck disable=SC1090
+        source "$SHELL_RC" 2>/dev/null || true
+        success "Shell config sourced ($SHELL_RC)."
+    fi
+}
+
+# ─── Relaunch Konsole with Darky profile ──────────────────
+relaunch_konsole() {
+    if command -v konsole &>/dev/null; then
+        info "Relaunching Konsole with Darky profile..."
+        # Open a new Konsole window with Darky profile, then close this session
+        nohup konsole --profile "Darky" &>/dev/null &
+        disown
+        success "New Konsole window opened with Darky profile."
+        sleep 1
+        # Exit current terminal session
+        kill -TERM $PPID 2>/dev/null || exit 0
+    else
+        warn "Konsole not found. Please restart your terminal manually."
+    fi
+}
+
 # ─── Main ─────────────────────────────────────
 main() {
     echo ""
@@ -226,8 +290,16 @@ main() {
 
     echo ""
     echo -e "${GREEN}${BOLD}✔ Installation complete!${RESET}"
-    echo -e "  Restart your terminal for all changes to take effect."
     echo ""
+
+    # Auto-apply everything
+    apply_konsole_profile
+    apply_shell_rc
+
+    echo ""
+    info "Relaunching terminal with Darky profile in 3 seconds..."
+    sleep 3
+    relaunch_konsole
 }
 
 main "$@"
