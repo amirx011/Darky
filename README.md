@@ -16,8 +16,7 @@ A clean terminal environment for KDE Plasma (Zsh / Bash)
 ![Konsole](screenshots/konsole.png)
 
 ## Installation
-> Recommended:
-> ** Quick install:** `bash chmod +x install.sh & ./install.sh`
+> Recommended: `chmod +x install.sh && ./install.sh`
 
 ### 1. Install Font 
 ```bash
