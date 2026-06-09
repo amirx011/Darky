@@ -24,7 +24,7 @@ $character"""
 
 add_newline = true
 
-palette = "apex"
+palette = "darky"
 
 [palettes.darky]
 primary    = "#A8C7FA"
