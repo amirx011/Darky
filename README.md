@@ -1,8 +1,6 @@
 # Darky-Plasma
 A clean terminal environment for KDE Plasma (Zsh / Bash)
 
-![License](https://img.shields.io/badge/License-MIT-blue)
-
 
 ![Platform](https://img.shields.io/badge/Platform-KDE_Plasma-blue)
 
