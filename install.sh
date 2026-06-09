@@ -216,16 +216,13 @@ install_starship() {
     echo -e "${BOLD}━━━ Step 5: Starship Prompt ━━━${RESET}"
 
     if ! command -v starship &>/dev/null; then
-        if ask "  Install Starship? (via official install.sh)"; then
+        if ask "Install Starship? (via official install.sh)"; then
             info "Installing Starship..."
-            if curl -sS --connect-timeout 15 https://starship.rs/install.sh | sh; then
+            # نصب با فلگ -y برای جلوگیری از پرسش تعاملی
+            if curl -sS --connect-timeout 15 https://starship.rs/install.sh | sh -s -- -y; then
                 success "Starship installed."
             else
-                warn "Starship installation failed. Possible causes:"
-                warn "  - No internet connection"
-                warn "  - curl not available"
-                warn "You can install it later with: curl -sS https://starship.rs/install.sh | sh"
-                warn "Skipped Starship installation."
+                warn "Starship installation failed."
                 return
             fi
         else
@@ -236,33 +233,24 @@ install_starship() {
         success "Starship is already installed."
     fi
 
-    if ask "  Copy starship.toml to ~/.config/starship.toml?"; then
+    # ✅ اصلاح ۱: اضافه کردن init به .zshrc
+    if [[ "$SHELL" == *"zsh"* ]] || [[ -n "$ZSH_VERSION" ]]; then
+        if ! grep -q "starship init zsh" ~/.zshrc 2>/dev/null; then
+            echo '' >> ~/.zshrc
+            echo '# Starship Prompt' >> ~/.zshrc
+            echo 'eval "$(starship init zsh)"' >> ~/.zshrc
+            success "Added starship init to ~/.zshrc"
+        fi
+    fi
+
+    # ✅ اصلاح ۲: کپی کانفیگ صحیح Starship (نه Fastfetch!)
+    if ask "Copy starship.toml to ~/.config/?"; then
+        mkdir -p ~/.config
+        # فرض بر این است که فایل starship.toml در TMP_DIR وجود دارد
         cp "$TMP_DIR/starship.toml" ~/.config/starship.toml
         success "starship.toml copied."
     else
-        warn "Skipped starship.toml."
-    fi
-
-    CURRENT_SHELL=$(basename "$SHELL")
-    if [[ "$CURRENT_SHELL" == "zsh" ]]; then
-        SHELL_RC="$HOME/.zshrc"
-        INIT_LINE='eval "$(starship init zsh)"'
-    elif [[ "$CURRENT_SHELL" == "bash" ]]; then
-        SHELL_RC="$HOME/.bashrc"
-        INIT_LINE='eval "$(starship init bash)"'
-    else
-        warn "Unknown shell ($CURRENT_SHELL). Add Starship init manually."
-        return
-    fi
-
-    if grep -qF "starship init" "$SHELL_RC" 2>/dev/null; then
-        success "Starship init already present in $SHELL_RC."
-    else
-        if ask "  Add Starship init to $SHELL_RC?"; then
-            echo 'export PATH="/usr/local/bin:$PATH"' >> "$SHELL_RC"
-            echo "$INIT_LINE" >> "$SHELL_RC"
-            success "Starship init added to $SHELL_RC."
-        fi
+        warn "Skipped starship config."
     fi
 }
 
