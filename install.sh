@@ -233,10 +233,10 @@ install_starship() {
         		warn "you can install it later with: curl -sS https://starship.rs/install.sh | sh "
             	warn "Skipped Starship installation."
             	return
-            fi
-    	else
-        	success "Starship is already installed."
-    	fi
+		fi
+    		else
+        		success "Starship is already installed."
+    		fi
 
     if ask "  Copy starship.toml to ~/.config/starship.toml?"; then
         cp "$TMP_DIR/starship.toml" ~/.config/starship.toml
