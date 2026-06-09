@@ -99,7 +99,7 @@ check_git() {
 clone_repo() {
     info "Cloning Darky repository..."
     rm -rf "$TMP_DIR"
-    git clone "$REPO_URL" "$TMP_DIR"
+    git clone --depth=1 "$REPO_URL" "$TMP_DIR"
     success "Repository cloned."
 }
 
@@ -177,6 +177,7 @@ install_wallpaper() {
     if ask "  Set Darky wallpaper?"; then
         mkdir -p ~/.local/share/wallpapers/Darky
         cp "$TMP_DIR/wallpaper/space-shuttle-nasa.jpg" ~/.local/share/wallpapers/Darky/
+        
         if command -v plasma-apply-wallpaperimage &>/dev/null; then
             plasma-apply-wallpaperimage ~/.local/share/wallpapers/Darky/space-shuttle-nasa.jpg
             success "Wallpaper applied."
