@@ -179,7 +179,7 @@ install_wallpaper() {
         cp "$TMP_DIR/wallpaper/wallpaper.jpg" ~/.local/share/wallpapers/Darky/
         
         if command -v plasma-apply-wallpaperimage &>/dev/null; then
-            plasma-apply-wallpaperimage ~/.local/share/wallpapers/Darky/space-shuttle-nasa.jpg
+            plasma-apply-wallpaperimage ~/.local/share/wallpapers/Darky/wallpaper.jpg
             success "Wallpaper applied."
         else
             warn "plasma-apply-wallpaperimage not found. Set it manually in KDE settings."
