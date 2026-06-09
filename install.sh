@@ -224,9 +224,13 @@ install_starship() {
     if ! command -v starship &>/dev/null; then
         if ask "  Install Starship? (via official install.sh)"; then
             info "Installing Starship..."
-            curl -sS https://starship.rs/install.sh | sh
+            if curl -sS --connect-timeout 20 https://starship.rs/install.sh | sh; then
             success "Starship installed."
         else
+        	warn "Starship installation failed. Possoble causes:"
+        	warn " -no internet connection"
+        	warn " -curl not available"
+        	warn "you can install it later with: curl -sS https://starship.rs/install.sh | sh "
             warn "Skipped Starship installation."
             return
         fi
