@@ -225,18 +225,18 @@ install_starship() {
         if ask "  Install Starship? (via official install.sh)"; then
             info "Installing Starship..."
             if curl -sS --connect-timeout 20 https://starship.rs/install.sh | sh; then
-            			success "Starship installed."
-       				else
-        				warn "Starship installation failed. Possoble causes:"
-        				warn " -no internet connection"
-        				warn " -curl not available"
-        				warn "you can install it later with: curl -sS https://starship.rs/install.sh | sh "
-            			warn "Skipped Starship installation."
-            			return
-            		fi
-    			else
-        			success "Starship is already installed."
-    			fi
+            	success "Starship installed."
+       		else
+        		warn "Starship installation failed. Possoble causes:"
+        		warn " -no internet connection"
+        		warn " -curl not available"
+        		warn "you can install it later with: curl -sS https://starship.rs/install.sh | sh "
+            	warn "Skipped Starship installation."
+            	return
+            fi
+    	else
+        	success "Starship is already installed."
+    	fi
 
     if ask "  Copy starship.toml to ~/.config/starship.toml?"; then
         cp "$TMP_DIR/starship.toml" ~/.config/starship.toml
@@ -262,7 +262,7 @@ install_starship() {
         success "Starship init already present in $SHELL_RC."
     else
         if ask "  Add Starship init to $SHELL_RC?"; then
-        	echo 'export PATH="/usr/local/bin:$PATH"' >> "SHELL_RC"
+        	echo 'export PATH="/usr/local/bin:$PATH"' >> "$SHELL_RC"
             echo "$INIT_LINE" >> "$SHELL_RC"
             success "Starship init added to $SHELL_RC."
         fi
