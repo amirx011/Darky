@@ -241,7 +241,6 @@ install_starship() {
         warn "Skipped starship.toml."
     fi
 
-    # Detect shell rc
     CURRENT_SHELL=$(basename "$SHELL")
     if [[ "$CURRENT_SHELL" == "zsh" ]]; then
         SHELL_RC="$HOME/.zshrc"
@@ -250,7 +249,7 @@ install_starship() {
         SHELL_RC="$HOME/.bashrc"
         INIT_LINE='eval "$(starship init bash)"'
     else
-        warn "Unknown shell ($CURRENT_SHELL). Please add Starship manually."
+        warn "Unknown shell. Add manually."
         return
     fi
 
@@ -258,7 +257,7 @@ install_starship() {
     if ! grep -q 'cargo/bin' "$SHELL_RC" 2>/dev/null; then
         cat >> "$SHELL_RC" << 'EOF'
 
-# Rust/Cargo binaries (Starship)
+# Rust / Cargo binaries (for Starship)
 export PATH="$HOME/.cargo/bin:$PATH"
 EOF
     fi
@@ -269,8 +268,11 @@ EOF
             success "Starship init added to $SHELL_RC."
         fi
     else
-        success "Starship init already present in $SHELL_RC."
+        success "Starship init already present."
     fi
+
+    # Force PATH in current session
+    export PATH="$HOME/.cargo/bin:$PATH"
 }
 
 # ─── Cleanup ──────────────────────────────────
