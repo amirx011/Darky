@@ -1,0 +1,233 @@
+#!/usr/bin/env bash
+
+# ╔══════════════════════════════════════════════╗
+# ║         Darky-Plasma Installer               ║
+# ║  Supports: Arch | Fedora | RHEL-based        ║
+# ╚══════════════════════════════════════════════╝
+
+set -e
+
+REPO_URL="https://github.com/amirx011/Darky"
+TMP_DIR="/tmp/darky-install"
+
+# ─── Colors ───────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+info()    { echo -e "${CYAN}[INFO]${RESET}  $*"; }
+success() { echo -e "${GREEN}[OK]${RESET}    $*"; }
+warn()    { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
+error()   { echo -e "${RED}[ERROR]${RESET} $*"; exit 1; }
+
+ask() {
+    while true; do
+        read -rp "$(echo -e "${BOLD}$1 [y/N]${RESET} ")" ans
+        case "${ans,,}" in
+            y|yes) return 0 ;;
+            n|no|"") return 1 ;;
+            *) echo "Please enter y or n." ;;
+        esac
+    done
+}
+
+# ─── Detect distro ────────────────────────────
+detect_distro() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        DISTRO_ID="${ID,,}"
+        DISTRO_LIKE="${ID_LIKE,,}"
+    else
+        error "Could not detect distro. /etc/os-release not found."
+    fi
+
+    if [[ "$DISTRO_ID" == "arch" || "$DISTRO_LIKE" == *"arch"* ]]; then
+        PKG_MANAGER="pacman"
+        info "Detected distro: Arch Linux"
+    elif [[ "$DISTRO_ID" == "fedora" ]]; then
+        PKG_MANAGER="dnf"
+        info "Detected distro: Fedora"
+    elif [[ "$DISTRO_LIKE" == *"rhel"* || "$DISTRO_LIKE" == *"fedora"* || \
+            "$DISTRO_ID" == "rhel" || "$DISTRO_ID" == "centos" || \
+            "$DISTRO_ID" == "almalinux" || "$DISTRO_ID" == "rocky" ]]; then
+        PKG_MANAGER="dnf"
+        info "Detected distro: RHEL-based ($PRETTY_NAME)"
+    else
+        error "Unsupported distro: $PRETTY_NAME\nOnly Arch, Fedora, and RHEL-based distros are supported."
+    fi
+}
+
+# ─── Install a package with confirmation ──────
+install_pkg() {
+    local pkg="$1"
+    local display="${2:-$1}"
+
+    if ask "  Install package '${display}'?"; then
+        info "Installing ${display}..."
+        if [[ "$PKG_MANAGER" == "pacman" ]]; then
+            sudo pacman -S --noconfirm "$pkg"
+        else
+            sudo dnf install -y "$pkg"
+        fi
+        success "${display} installed."
+    else
+        warn "Skipped installation of ${display}."
+    fi
+}
+
+# ─── Check git ────────────────────────────────
+check_git() {
+    if ! command -v git &>/dev/null; then
+        warn "git not found."
+        if ask "  Install git?"; then
+            if [[ "$PKG_MANAGER" == "pacman" ]]; then
+                sudo pacman -S --noconfirm git
+            else
+                sudo dnf install -y git
+            fi
+            success "git installed."
+        else
+            error "git is required to continue."
+        fi
+    fi
+}
+
+# ─── Clone repo ───────────────────────────────
+clone_repo() {
+    info "Cloning Darky repository..."
+    rm -rf "$TMP_DIR"
+    git clone --depth=1 "$REPO_URL" "$TMP_DIR"
+    success "Repository cloned."
+}
+
+# ─── Step 1: JetBrains Mono Font ──────────────
+install_font() {
+    echo ""
+    echo -e "${BOLD}━━━ Step 1: JetBrains Mono Font ━━━${RESET}"
+
+    if [[ "$PKG_MANAGER" == "pacman" ]]; then
+        install_pkg "ttf-jetbrains-mono" "JetBrains Mono (Arch)"
+    else
+        install_pkg "jetbrains-mono-fonts-all" "JetBrains Mono (Fedora/RHEL)"
+    fi
+}
+
+# ─── Step 2: Konsole theme ────────────────────
+install_konsole() {
+    echo ""
+    echo -e "${BOLD}━━━ Step 2: Konsole Theme ━━━${RESET}"
+
+    if ask "  Install Konsole theme?"; then
+        mkdir -p ~/.local/share/konsole
+        cp "$TMP_DIR/DarkySlate.colorscheme" ~/.local/share/konsole/
+        cp "$TMP_DIR/Darky.profile"          ~/.local/share/konsole/
+        success "Konsole files copied."
+        info "To activate: Konsole → Settings → Manage Profiles → Darky"
+    else
+        warn "Skipped Konsole theme."
+    fi
+}
+
+# ─── Step 3: Fastfetch ────────────────────────
+install_fastfetch() {
+    echo ""
+    echo -e "${BOLD}━━━ Step 3: Fastfetch ━━━${RESET}"
+
+    if ! command -v fastfetch &>/dev/null; then
+        install_pkg "fastfetch" "fastfetch"
+    else
+        success "fastfetch is already installed."
+    fi
+
+    if ask "  Copy config.jsonc to ~/.config/fastfetch/?"; then
+        mkdir -p ~/.config/fastfetch
+        cp "$TMP_DIR/config.jsonc" ~/.config/fastfetch/
+        success "config.jsonc copied."
+        warn "If you are not on Fedora, change the \"source\" value in config.jsonc to your distro name."
+    else
+        warn "Skipped fastfetch config."
+    fi
+}
+
+# ─── Step 4: Starship ─────────────────────────
+install_starship() {
+    echo ""
+    echo -e "${BOLD}━━━ Step 4: Starship Prompt ━━━${RESET}"
+
+    if ! command -v starship &>/dev/null; then
+        if ask "  Install Starship? (via official install.sh)"; then
+            info "Installing Starship..."
+            curl -sS https://starship.rs/install.sh | sh
+            success "Starship installed."
+        else
+            warn "Skipped Starship installation."
+            return
+        fi
+    else
+        success "Starship is already installed."
+    fi
+
+    if ask "  Copy starship.toml to ~/.config/starship.toml?"; then
+        cp "$TMP_DIR/starship.toml" ~/.config/starship.toml
+        success "starship.toml copied."
+    else
+        warn "Skipped starship.toml."
+    fi
+
+    # Shell init
+    CURRENT_SHELL=$(basename "$SHELL")
+    if [[ "$CURRENT_SHELL" == "zsh" ]]; then
+        SHELL_RC="$HOME/.zshrc"
+        INIT_LINE='eval "$(starship init zsh)"'
+    elif [[ "$CURRENT_SHELL" == "bash" ]]; then
+        SHELL_RC="$HOME/.bashrc"
+        INIT_LINE='eval "$(starship init bash)"'
+    else
+        warn "Unknown shell ($CURRENT_SHELL). Add Starship init manually."
+        return
+    fi
+
+    if grep -qF "starship init" "$SHELL_RC" 2>/dev/null; then
+        success "Starship init already present in $SHELL_RC."
+    else
+        if ask "  Add Starship init to $SHELL_RC?"; then
+            echo "$INIT_LINE" >> "$SHELL_RC"
+            success "Starship init added to $SHELL_RC."
+        fi
+    fi
+}
+
+# ─── Cleanup ──────────────────────────────────
+cleanup() {
+    rm -rf "$TMP_DIR"
+}
+
+# ─── Main ─────────────────────────────────────
+main() {
+    echo ""
+    echo -e "${BOLD}${CYAN}╔════════════════════════════════╗${RESET}"
+    echo -e "${BOLD}${CYAN}║     Darky-Plasma Installer     ║${RESET}"
+    echo -e "${BOLD}${CYAN}╚════════════════════════════════╝${RESET}"
+    echo ""
+
+    detect_distro
+    check_git
+    clone_repo
+
+    install_font
+    install_konsole
+    install_fastfetch
+    install_starship
+
+    cleanup
+
+    echo ""
+    echo -e "${GREEN}${BOLD}✔ Installation complete!${RESET}"
+    echo -e "  Restart your terminal for all changes to take effect."
+    echo ""
+}
+
+main "$@"
