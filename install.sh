@@ -233,7 +233,7 @@ install_starship() {
         		warn "you can install it later with: curl -sS https://starship.rs/install.sh | sh "
             	warn "Skipped Starship installation."
             	return
-       		fi
+            	fi
     else
         success "Starship is already installed."
     fi
