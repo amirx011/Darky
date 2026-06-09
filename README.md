@@ -9,9 +9,6 @@ A clean terminal environment for KDE Plasma (Zsh / Bash)
 ![GIF](screenshots/konsole.gif)
 
 
-![Fastfetch 0](screenshots/fastfetch0.png)
-
-
 ![Fastfetch1](screenshots/fastfetch1.png)
 
 
