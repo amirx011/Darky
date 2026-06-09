@@ -264,6 +264,13 @@ install_starship() {
             success "Starship init added to $SHELL_RC."
         fi
     fi
+
+export PATH="$HOME/.cargo/bin:$PATH"
+if command -v starship &> /dev/null; then
+    success "Starship is ready."
+else
+    warn "Starship installed but not in PATH. Please restart terminal or run: source \~/.zshrc"
+fi
 }
 
 # ─── Cleanup ──────────────────────────────────
