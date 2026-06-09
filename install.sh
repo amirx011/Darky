@@ -103,6 +103,50 @@ clone_repo() {
     success "Repository cloned."
 }
 
+
+# ─── Step 0: Zsh ──────────────────────────────
+install_zsh() {
+    echo ""
+    echo -e "${BOLD}━━━ Step 0: Zsh Shell ━━━${RESET}"
+
+    # Install zsh if missing
+    if ! command -v zsh &>/dev/null; then
+        info "zsh is not installed. Installing..."
+        if [[ "$PKG_MANAGER" == "pacman" ]]; then
+            sudo pacman -S --noconfirm zsh
+        else
+            sudo dnf install -y zsh
+        fi
+        success "zsh installed."
+    else
+        success "zsh is already installed."
+    fi
+
+    # Check if zsh is already the default shell
+    if [[ "$SHELL" == *"zsh"* ]]; then
+        success "zsh is already your default shell."
+        return
+    fi
+
+    # Make sure zsh is in /etc/shells
+    ZSH_PATH="$(command -v zsh)"
+    if ! grep -qF "$ZSH_PATH" /etc/shells; then
+        echo "$ZSH_PATH" | sudo tee -a /etc/shells > /dev/null
+        info "Added $ZSH_PATH to /etc/shells."
+    fi
+
+    # Switch default shell to zsh
+    info "Switching default shell to zsh (current: $(basename "$SHELL"))..."
+    chsh -s "$ZSH_PATH"
+    success "Default shell changed to zsh. Takes effect on next login."
+
+    # Create .zshrc if it doesn't exist
+    if [ ! -f "$HOME/.zshrc" ]; then
+        touch "$HOME/.zshrc"
+        info "Created empty ~/.zshrc."
+    fi
+}
+
 # ─── Step 1: JetBrains Mono Font ──────────────
 install_font() {
     echo ""
@@ -300,7 +344,7 @@ main() {
     detect_distro
     check_git
     clone_repo
-
+	install_zsh
     install_font
     install_konsole
     install_wallpaper
