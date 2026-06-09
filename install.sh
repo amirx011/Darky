@@ -138,7 +138,7 @@ install_wallpaper() {
 
     if ask "  Set Darky wallpaper?"; then
         mkdir -p ~/.local/share/wallpapers/Darky
-        cp "$TMP_DIR/wallpaper/space-shuttle-nasa.jpg" ~/.local/share/wallpapers/Darky/
+        cp "$TMP_DIR/wallpaper/wallpaper.jpg" ~/.local/share/wallpapers/Darky/
         
         if command -v plasma-apply-wallpaperimage &>/dev/null; then
             plasma-apply-wallpaperimage ~/.local/share/wallpapers/Darky/wallpaper.jpg
