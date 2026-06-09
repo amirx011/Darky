@@ -99,17 +99,15 @@ check_git() {
 clone_repo() {
     info "Cloning Darky repository..."
     rm -rf "$TMP_DIR"
-    git clone --depth=1 "$REPO_URL" "$TMP_DIR"
+    git clone "$REPO_URL" "$TMP_DIR"
     success "Repository cloned."
 }
-
 
 # ─── Step 0: Zsh ──────────────────────────────
 install_zsh() {
     echo ""
     echo -e "${BOLD}━━━ Step 0: Zsh Shell ━━━${RESET}"
 
-    # Install zsh if missing
     if ! command -v zsh &>/dev/null; then
         info "zsh is not installed. Installing..."
         if [[ "$PKG_MANAGER" == "pacman" ]]; then
@@ -122,25 +120,21 @@ install_zsh() {
         success "zsh is already installed."
     fi
 
-    # Check if zsh is already the default shell
     if [[ "$SHELL" == *"zsh"* ]]; then
         success "zsh is already your default shell."
         return
     fi
 
-    # Make sure zsh is in /etc/shells
     ZSH_PATH="$(command -v zsh)"
     if ! grep -qF "$ZSH_PATH" /etc/shells; then
         echo "$ZSH_PATH" | sudo tee -a /etc/shells > /dev/null
         info "Added $ZSH_PATH to /etc/shells."
     fi
 
-    # Switch default shell to zsh
     info "Switching default shell to zsh (current: $(basename "$SHELL"))..."
     chsh -s "$ZSH_PATH"
     success "Default shell changed to zsh. Takes effect on next login."
 
-    # Create .zshrc if it doesn't exist
     if [ ! -f "$HOME/.zshrc" ]; then
         touch "$HOME/.zshrc"
         info "Created empty ~/.zshrc."
@@ -175,17 +169,16 @@ install_konsole() {
     fi
 }
 
-# ─── Step 2.5: Wallpaper ──────────────────────
+# ─── Step 3: Wallpaper ────────────────────────
 install_wallpaper() {
     echo ""
     echo -e "${BOLD}━━━ Step 3: Wallpaper ━━━${RESET}"
 
     if ask "  Set Darky wallpaper?"; then
         mkdir -p ~/.local/share/wallpapers/Darky
-        cp "$TMP_DIR/wallpaper/wallpaper.jpg" ~/.local/share/wallpapers/Darky/
-        
+        cp "$TMP_DIR/wallpaper/space-shuttle-nasa.jpg" ~/.local/share/wallpapers/Darky/
         if command -v plasma-apply-wallpaperimage &>/dev/null; then
-            plasma-apply-wallpaperimage ~/.local/share/wallpapers/Darky/wallpaper.jpg
+            plasma-apply-wallpaperimage ~/.local/share/wallpapers/Darky/space-shuttle-nasa.jpg
             success "Wallpaper applied."
         else
             warn "plasma-apply-wallpaperimage not found. Set it manually in KDE settings."
@@ -195,10 +188,10 @@ install_wallpaper() {
     fi
 }
 
-# ─── Step 3: Fastfetch ────────────────────────
+# ─── Step 4: Fastfetch ────────────────────────
 install_fastfetch() {
     echo ""
-    echo -e "${BOLD}━━━ Step 3: Fastfetch ━━━${RESET}"
+    echo -e "${BOLD}━━━ Step 4: Fastfetch ━━━${RESET}"
 
     if ! command -v fastfetch &>/dev/null; then
         install_pkg "fastfetch" "fastfetch"
@@ -216,27 +209,31 @@ install_fastfetch() {
     fi
 }
 
-# ─── Step 4: Starship ─────────────────────────
+# ─── Step 5: Starship ─────────────────────────
 install_starship() {
     echo ""
-    echo -e "${BOLD}━━━ Step 4: Starship Prompt ━━━${RESET}"
+    echo -e "${BOLD}━━━ Step 5: Starship Prompt ━━━${RESET}"
 
     if ! command -v starship &>/dev/null; then
         if ask "  Install Starship? (via official install.sh)"; then
             info "Installing Starship..."
-            if curl -sS --connect-timeout 20 https://starship.rs/install.sh | sh; then
-            	success "Starship installed."
-       		else
-        		warn "Starship installation failed. Possoble causes:"
-        		warn " -no internet connection"
-        		warn " -curl not available"
-        		warn "you can install it later with: curl -sS https://starship.rs/install.sh | sh "
-            	warn "Skipped Starship installation."
-            	return
-		fi
-    		else
-        		success "Starship is already installed."
-    		fi
+            if curl -sS --connect-timeout 15 https://starship.rs/install.sh | sh; then
+                success "Starship installed."
+            else
+                warn "Starship installation failed. Possible causes:"
+                warn "  - No internet connection"
+                warn "  - curl not available"
+                warn "You can install it later with: curl -sS https://starship.rs/install.sh | sh"
+                warn "Skipped Starship installation."
+                return
+            fi
+        else
+            warn "Skipped Starship installation."
+            return
+        fi
+    else
+        success "Starship is already installed."
+    fi
 
     if ask "  Copy starship.toml to ~/.config/starship.toml?"; then
         cp "$TMP_DIR/starship.toml" ~/.config/starship.toml
@@ -245,7 +242,6 @@ install_starship() {
         warn "Skipped starship.toml."
     fi
 
-    # Shell init
     CURRENT_SHELL=$(basename "$SHELL")
     if [[ "$CURRENT_SHELL" == "zsh" ]]; then
         SHELL_RC="$HOME/.zshrc"
@@ -262,12 +258,11 @@ install_starship() {
         success "Starship init already present in $SHELL_RC."
     else
         if ask "  Add Starship init to $SHELL_RC?"; then
-        	echo 'export PATH="/usr/local/bin:$PATH"' >> "$SHELL_RC"
+            echo 'export PATH="/usr/local/bin:$PATH"' >> "$SHELL_RC"
             echo "$INIT_LINE" >> "$SHELL_RC"
             success "Starship init added to $SHELL_RC."
         fi
     fi
-
 }
 
 # ─── Cleanup ──────────────────────────────────
@@ -280,17 +275,14 @@ apply_konsole_profile() {
     local profile_name="Darky"
     local konsolerc="$HOME/.config/konsolerc"
 
-    # Set default profile via kwriteconfig5 if available
     if command -v kwriteconfig5 &>/dev/null; then
         kwriteconfig5 --file "$konsolerc" --group "Desktop Entry" --key "DefaultProfile" "${profile_name}.profile"
         success "Darky set as default Konsole profile."
     else
-        # Fallback: edit konsolerc directly
         if [ -f "$konsolerc" ]; then
             if grep -q "DefaultProfile" "$konsolerc"; then
                 sed -i "s/^DefaultProfile=.*/DefaultProfile=${profile_name}.profile/" "$konsolerc"
             else
-                # Add under [Desktop Entry] section or append
                 if grep -q "\[Desktop Entry\]" "$konsolerc"; then
                     sed -i "/\[Desktop Entry\]/a DefaultProfile=${profile_name}.profile" "$konsolerc"
                 else
@@ -305,7 +297,7 @@ apply_konsole_profile() {
     fi
 }
 
-# ─── Auto-apply: source shell rc in current session ───────
+# ─── Auto-apply: source shell rc ──────────────
 apply_shell_rc() {
     CURRENT_SHELL=$(basename "$SHELL")
     if [[ "$CURRENT_SHELL" == "zsh" ]]; then
@@ -323,16 +315,14 @@ apply_shell_rc() {
     fi
 }
 
-# ─── Relaunch Konsole with Darky profile ──────────────────
+# ─── Relaunch Konsole with Darky profile ──────
 relaunch_konsole() {
     if command -v konsole &>/dev/null; then
         info "Relaunching Konsole with Darky profile..."
-        # Open a new Konsole window with Darky profile, then close this session
         nohup konsole --profile "Darky" &>/dev/null &
         disown
         success "New Konsole window opened with Darky profile."
         sleep 1
-        # Exit current terminal session
         kill -TERM $PPID 2>/dev/null || exit 0
     else
         warn "Konsole not found. Please restart your terminal manually."
@@ -350,7 +340,8 @@ main() {
     detect_distro
     check_git
     clone_repo
-	install_zsh
+
+    install_zsh
     install_font
     install_konsole
     install_wallpaper
@@ -363,7 +354,6 @@ main() {
     echo -e "${GREEN}${BOLD}✔ Installation complete!${RESET}"
     echo ""
 
-    # Auto-apply everything
     apply_konsole_profile
     apply_shell_rc
 
