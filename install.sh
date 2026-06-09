@@ -131,6 +131,26 @@ install_konsole() {
     fi
 }
 
+# ─── Step 2.5: Wallpaper ──────────────────────
+install_wallpaper() {
+    echo ""
+    echo -e "${BOLD}━━━ Step 3: Wallpaper ━━━${RESET}"
+
+    if ask "  Set Darky wallpaper?"; then
+        mkdir -p ~/.local/share/wallpapers/Darky
+        cp "$TMP_DIR/wallpaper/space-shuttle-nasa.jpg" ~/.local/share/wallpapers/Darky/
+        
+        if command -v plasma-apply-wallpaperimage &>/dev/null; then
+            plasma-apply-wallpaperimage ~/.local/share/wallpapers/Darky/wallpaper.jpg
+            success "Wallpaper applied."
+        else
+            warn "plasma-apply-wallpaperimage not found. Set it manually in KDE settings."
+        fi
+    else
+        warn "Skipped wallpaper."
+    fi
+}
+
 # ─── Step 3: Fastfetch ────────────────────────
 install_fastfetch() {
     echo ""
@@ -283,6 +303,7 @@ main() {
 
     install_font
     install_konsole
+    install_wallpaper
     install_fastfetch
     install_starship
 
