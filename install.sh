@@ -219,7 +219,7 @@ install_starship() {
         if ask "  Install Starship? (via official install.sh)"; then
             info "Installing Starship..."
             if curl -sS --connect-timeout 15 https://starship.rs/install.sh | sh; then
-                success "Starship installed."
+                success "Starship installed successfully."
             else
                 warn "Starship installation failed."
                 return
@@ -232,14 +232,16 @@ install_starship() {
         success "Starship is already installed."
     fi
 
+    # Copy config
     if ask "  Copy starship.toml to \~/.config/starship.toml?"; then
         mkdir -p \~/.config
-        cp "$TMP_DIR/starship.toml" \~/.config/starship.toml
+        cp "$TMP_DIR/starship.toml" \~/.config/starship.toml 2>/dev/null || true
         success "starship.toml copied."
     else
         warn "Skipped starship.toml."
     fi
 
+    # Detect shell rc
     CURRENT_SHELL=$(basename "$SHELL")
     if [[ "$CURRENT_SHELL" == "zsh" ]]; then
         SHELL_RC="$HOME/.zshrc"
@@ -248,15 +250,15 @@ install_starship() {
         SHELL_RC="$HOME/.bashrc"
         INIT_LINE='eval "$(starship init bash)"'
     else
-        warn "Unknown shell. Add manually."
+        warn "Unknown shell ($CURRENT_SHELL). Please add Starship manually."
         return
     fi
 
-    # --- رفع مشکل PATH ---
+    # === رفع مشکل PATH و Init ===
     if ! grep -q 'cargo/bin' "$SHELL_RC" 2>/dev/null; then
         cat >> "$SHELL_RC" << 'EOF'
 
-# Rust / Cargo binaries (for Starship)
+# Rust/Cargo binaries (Starship)
 export PATH="$HOME/.cargo/bin:$PATH"
 EOF
     fi
@@ -267,7 +269,7 @@ EOF
             success "Starship init added to $SHELL_RC."
         fi
     else
-        success "Starship init already present."
+        success "Starship init already present in $SHELL_RC."
     fi
 }
 
