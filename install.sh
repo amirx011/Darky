@@ -258,10 +258,12 @@ install_starship() {
         success "Starship init already present in $SHELL_RC."
     else
         if ask "  Add Starship init to $SHELL_RC?"; then
+        	echo 'export PATH="/usr/local/bin:$PATH"' >> "SHELL_RC"
             echo "$INIT_LINE" >> "$SHELL_RC"
             success "Starship init added to $SHELL_RC."
         fi
     fi
+
 }
 
 # ─── Cleanup ──────────────────────────────────
