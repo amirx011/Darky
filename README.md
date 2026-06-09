@@ -6,6 +6,7 @@ A clean terminal environment for KDE Plasma (Zsh / Bash)
 
 
 ## Preview
+![GIF](screenshots/knosole.gif)
 
 
 ![Fastfetch 0](screenshots/fastfetch0.png)
