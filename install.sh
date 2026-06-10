@@ -253,7 +253,6 @@ install_starship() {
         return
     fi
 
-    # === رفع مشکل PATH و Init ===
     if ! grep -q 'cargo/bin' "$SHELL_RC" 2>/dev/null; then
         cat >> "$SHELL_RC" << 'EOF'
 
