@@ -64,7 +64,7 @@ detect_distro() {
 	elif [[ "$DISTRO_ID" == "kali" ]]; then
 	    PKG_MANAGER="apt"
 	    info "Detected distro: Kali Linux"
-   	elif [[ "$DISTRO_ID" == "kubuntu"]]; then
+   	elif [[ "$DISTRO_ID" == "kubuntu" ]]; then
 	    PKG_MANAGER="apt"
 	 	info "Detected distro: Kali Linux"
     else
@@ -81,7 +81,7 @@ install_pkg() {
         info "Installing ${display}..."
         if [[ "$PKG_MANAGER" == "pacman" ]]; then
             sudo pacman -S --noconfirm "$pkg"
-        elif [[ "PKG_MANAGER" == "apt"]]; then
+        elif [[ "PKG_MANAGER" == "apt" ]]; then
         	sudo apt install -y "$pkg"
         else
             sudo dnf install -y "$pkg"
@@ -99,7 +99,7 @@ check_git() {
         if ask "  Install git?"; then
             if [[ "$PKG_MANAGER" == "pacman" ]]; then
                 sudo pacman -S --noconfirm git
-            elif [[ "PKG_MANAGER" == "apt"]]; then
+            elif [[ "PKG_MANAGER" == "apt" ]]; then
                 sudo apt install -y git            
             else
                 sudo dnf install -y git
@@ -128,8 +128,8 @@ install_zsh() {
         info "zsh is not installed. Installing..."
         if [[ "$PKG_MANAGER" == "pacman" ]]; then
             sudo pacman -S --noconfirm zsh
-        elif [[ "$PKG_MANAGER" == "dnf"]]; then
-        	sudo dnf install -y dnf
+        elif [[ "$PKG_MANAGER" == "dnf" ]]; then
+        	sudo dnf install -y zsh
         else
             sudo apt install -y zsh
         fi
@@ -166,7 +166,7 @@ install_font() {
 
     if [[ "$PKG_MANAGER" == "pacman" ]]; then
         install_pkg "ttf-jetbrains-mono" "JetBrains Mono (Arch)"
-    elif [[ "$PKG_MANAGER" == "apt"]]; then
+    elif [[ "$PKG_MANAGER" == "apt" ]]; then
     	install_pkg "fonts-jetbrains-mono" "Jetbrains Mono (Debian/Ubuntu/Kali)"
     else
         install_pkg "jetbrains-mono-fonts-all" "JetBrains Mono (Fedora/RHEL)"
