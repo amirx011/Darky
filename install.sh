@@ -61,6 +61,9 @@ detect_distro() {
             "$DISTRO_ID" == "almalinux" || "$DISTRO_ID" == "rocky" ]]; then
         PKG_MANAGER="dnf"
         info "Detected distro: RHEL-based ($PRETTY_NAME)"
+	 elif [[ "$DISTRO_ID" == "kali" ]]; then
+	        PKG_MANAGER="apt"
+	        info "Detected distro: Kali Linux"
     else
         error "Unsupported distro: $PRETTY_NAME\nOnly Arch, Fedora, and RHEL-based distros are supported."
     fi
