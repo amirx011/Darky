@@ -170,7 +170,7 @@ install_font() {
     	if [[ "$DISTRO_ID" == "kali" ]]; then
     		info "Enabling non-free repository for Kali..."
     		sudo apt-add-repository non-free -y
-    		sudo apt update -qq
+    		sudo apt update --allow-insecure-repositories 2>/dev/null || true
     	fi
     	install_pkg "fonts-jetbrains-mono" "Jetbrains Mono (Debian/Ubuntu/Kali)"
     else
