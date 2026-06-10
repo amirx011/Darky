@@ -213,15 +213,17 @@ install_fastfetch() {
 # ─── Step 5: Starship ─────────────────────────
 install_starship() {
     echo ""
-    echo -e "\( {BOLD}━━━ Step 5: Starship Prompt ━━━ \){RESET}"
+    echo -e "${BOLD}━━━ Step 5: Starship Prompt ━━━${RESET}"
 
     if ! command -v starship &>/dev/null; then
-        if ask "  Install Starship? (via official install.sh)"; then
+        if ask " Install Starship? (via official install.sh)"; then
             info "Installing Starship..."
-            if curl -sS --connect-timeout 15 https://starship.rs/install.sh | sh; then
-                success "Starship installed successfully."
+            if curl -sS --connect-timeout 20 https://starship.rs/install.sh | sh; then
+                success "Starship installed."
             else
                 warn "Starship installation failed."
+                warn "You can install it later with: curl -sS https://starship.rs/install.sh | sh"
+                warn "Skipped Starship installation."
                 return
             fi
         else
@@ -232,15 +234,14 @@ install_starship() {
         success "Starship is already installed."
     fi
 
-    # Copy config
-    if ask "  Copy starship.toml to \~/.config/starship.toml?"; then
-        mkdir -p \~/.config
-        cp "$TMP_DIR/starship.toml" \~/.config/starship.toml 2>/dev/null || true
+    if ask " Copy starship.toml to ~/.config/starship.toml?"; then
+        cp "$TMP_DIR/starship.toml" ~/.config/starship.toml
         success "starship.toml copied."
     else
         warn "Skipped starship.toml."
     fi
 
+    # Shell init
     CURRENT_SHELL=$(basename "$SHELL")
     if [[ "$CURRENT_SHELL" == "zsh" ]]; then
         SHELL_RC="$HOME/.zshrc"
@@ -249,29 +250,19 @@ install_starship() {
         SHELL_RC="$HOME/.bashrc"
         INIT_LINE='eval "$(starship init bash)"'
     else
-        warn "Unknown shell. Add manually."
+        warn "Unknown shell ($CURRENT_SHELL). Add Starship init manually."
         return
     fi
 
-    if ! grep -q 'cargo/bin' "$SHELL_RC" 2>/dev/null; then
-        cat >> "$SHELL_RC" << 'EOF'
-
-# Rust / Cargo binaries (for Starship)
-export PATH="$HOME/.cargo/bin:$PATH"
-EOF
-    fi
-
-    if ! grep -q "starship init" "$SHELL_RC" 2>/dev/null; then
-        if ask "  Add Starship init to $SHELL_RC?"; then
+    if grep -qF "starship init" "$SHELL_RC" 2>/dev/null; then
+        success "Starship init already present in $SHELL_RC."
+    else
+        if ask " Add Starship init to $SHELL_RC?"; then
+            echo 'export PATH="/usr/local/bin:$PATH"' >> "$SHELL_RC"   # ← $ اضافه شد
             echo "$INIT_LINE" >> "$SHELL_RC"
             success "Starship init added to $SHELL_RC."
         fi
-    else
-        success "Starship init already present."
     fi
-
-    # Force PATH in current session
-    export PATH="$HOME/.cargo/bin:$PATH"
 }
 
 # ─── Cleanup ──────────────────────────────────
