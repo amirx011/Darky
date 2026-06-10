@@ -215,7 +215,20 @@ install_fastfetch() {
     echo -e "${BOLD}━━━ Step 4: Fastfetch ━━━${RESET}"
 
     if ! command -v fastfetch &>/dev/null; then
-        install_pkg "fastfetch" "fastfetch"
+        if [[ "$PKG_MANAGER" == "apt" ]]; then
+            if [[ "$(uname -m)" != "x86_64" ]]; then
+                warn "This installer only supports x86_64. Skipping fastfetch."
+                return
+            fi
+            info "Installing fastfetch via direct download..."
+            curl -sL "https://github.com/fastfetch-cli/fastfetch/releases/latest/download/fastfetch-linux-amd64.deb" \
+                -o /tmp/fastfetch.deb
+            sudo dpkg -i /tmp/fastfetch.deb
+            rm -f /tmp/fastfetch.deb
+            success "fastfetch installed."
+        else
+            install_pkg "fastfetch" "fastfetch"
+        fi
     else
         success "fastfetch is already installed."
     fi
