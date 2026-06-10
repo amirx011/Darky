@@ -47,6 +47,12 @@ detect_distro() {
     if [[ "$DISTRO_ID" == "arch" || "$DISTRO_LIKE" == *"arch"* ]]; then
         PKG_MANAGER="pacman"
         info "Detected distro: Arch Linux"
+    elif [[ "$DISTRO_ID" == "parch" ]]; then
+        PKG_MANAGER="pacman"
+        info "Detected distro: Parch Linux"
+    elif [[ "$DISTRO_ID" == "manjaro" ]]; then
+        PKG_MANAGER="pacman"
+        info "Detected distro: Manjaro Linux"
     elif [[ "$DISTRO_ID" == "fedora" ]]; then
         PKG_MANAGER="dnf"
         info "Detected distro: Fedora"
