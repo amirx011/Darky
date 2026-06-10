@@ -17,6 +17,8 @@ A clean terminal environment for KDE Plasma (Zsh / Bash)
 
 ## Installation
 > Supports Arch Linux, Arch-Based, Fedora, and RHEL-Based Distributions
+
+
 > Recommended: `chmod +x install.sh && ./install.sh`
 
 ### 1. Install Font 
