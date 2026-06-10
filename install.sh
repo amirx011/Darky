@@ -167,12 +167,14 @@ install_font() {
     if [[ "$PKG_MANAGER" == "pacman" ]]; then
         install_pkg "ttf-jetbrains-mono" "JetBrains Mono (Arch)"
     elif [[ "$PKG_MANAGER" == "apt" ]]; then
-    	if [[ "$DISTRO_ID" == "kali" ]]; then
-    		info "Enabling non-free repository for Kali..."
-    		sudo apt-add-repository non-free -y
-    		sudo apt update --allow-insecure-repositories 2>/dev/null || true
-    	fi
-    	install_pkg "fonts-jetbrains-mono" "Jetbrains Mono (Debian/Ubuntu/Kali)"
+    info "Installing JetBrains Mono via direct download..."
+    curl -sL "https://download.jetbrains.com/fonts/JetBrainsMono-2.304.zip" -o /tmp/JetBrainsMono.zip
+    unzip /tmp/JetBrainsMono.zip -d /tmp/JetBrainsMono
+    mkdir -p ~/.local/share/fonts/JetBrainsMono
+    cp /tmp/JetBrainsMono/fonts/ttf/*.ttf ~/.local/share/fonts/JetBrainsMono/
+    fc-cache -fv
+    rm -rf /tmp/JetBrainsMono /tmp/JetBrainsMono.zip
+    success "JetBrains Mono installed."
     else
         install_pkg "jetbrains-mono-fonts-all" "JetBrains Mono (Fedora/RHEL)"
     fi
