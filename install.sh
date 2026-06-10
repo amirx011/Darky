@@ -167,6 +167,11 @@ install_font() {
     if [[ "$PKG_MANAGER" == "pacman" ]]; then
         install_pkg "ttf-jetbrains-mono" "JetBrains Mono (Arch)"
     elif [[ "$PKG_MANAGER" == "apt" ]]; then
+    	if [[ "$DISTRO_ID" == "kali" ]]; then
+    		info "Enabling non-free repository for Kali..."
+    		sudo apt-add-repository non-free -y
+    		sudo apt update -qq
+    	fi
     	install_pkg "fonts-jetbrains-mono" "Jetbrains Mono (Debian/Ubuntu/Kali)"
     else
         install_pkg "jetbrains-mono-fonts-all" "JetBrains Mono (Fedora/RHEL)"
