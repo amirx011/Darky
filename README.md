@@ -7,7 +7,6 @@ A clean terminal environment for KDE Plasma (Zsh / Bash)
 
 ## Preview
 ![GIF](screenshots/konsole.gif)
-> Supports Arch Linux, Arch-Based, Fedora, and RHEL-Based Distributions.
 > ---------------------------------------------------------
 
 ![Fastfetch1](screenshots/fastfetch1.png)
