@@ -64,9 +64,9 @@ detect_distro() {
 	elif [[ "$DISTRO_ID" == "kali" ]]; then
 	    PKG_MANAGER="apt"
 	    info "Detected distro: Kali Linux"
-   	elif [[ "$DISTRO_ID" == "kubuntu" ]]; then
+   	elif [[ "$DISTRO_ID" == "ubuntu" ]]; then
 	    PKG_MANAGER="apt"
-	 	info "Detected distro: Kali Linux"
+	 	info "Detected distro: Ubuntu Linux"
     else
         error "Unsupported distro: $PRETTY_NAME\nOnly Arch, Fedora, and RHEL-based distros are supported."
     fi
@@ -81,7 +81,7 @@ install_pkg() {
         info "Installing ${display}..."
         if [[ "$PKG_MANAGER" == "pacman" ]]; then
             sudo pacman -S --noconfirm "$pkg"
-        elif [[ "PKG_MANAGER" == "dnf" ]]; then
+        elif [[ "$PKG_MANAGER" == "dnf" ]]; then
         	sudo dnf install -y "$pkg"
         else
             sudo apt install -y "$pkg"
@@ -99,7 +99,7 @@ check_git() {
         if ask "  Install git?"; then
             if [[ "$PKG_MANAGER" == "pacman" ]]; then
                 sudo pacman -S --noconfirm git
-            elif [[ "PKG_MANAGER" == "apt" ]]; then
+            elif [[ "$PKG_MANAGER" == "apt" ]]; then
                 sudo apt install -y git            
             else
                 sudo dnf install -y git
