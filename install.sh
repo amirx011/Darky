@@ -81,10 +81,10 @@ install_pkg() {
         info "Installing ${display}..."
         if [[ "$PKG_MANAGER" == "pacman" ]]; then
             sudo pacman -S --noconfirm "$pkg"
-        elif [[ "PKG_MANAGER" == "apt" ]]; then
-        	sudo apt install -y "$pkg"
+        elif [[ "PKG_MANAGER" == "dnf" ]]; then
+        	sudo dnf install -y "$pkg"
         else
-            sudo dnf install -y "$pkg"
+            sudo apt install -y "$pkg"
         fi
         success "${display} installed."
     else
