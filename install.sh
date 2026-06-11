@@ -240,11 +240,36 @@ install_fastfetch() {
         success "fastfetch is already installed."
     fi
 
-    if ask "  Copy config.jsonc to ~/.config/fastfetch/?"; then
+    if ask "  Copy fastfetch configs to ~/.config/fastfetch/?"; then
         mkdir -p ~/.config/fastfetch
+
+        # config.jsonc — for manual `fastfetch` (distro logo)
         cp "$TMP_DIR/config.jsonc" ~/.config/fastfetch/
         success "config.jsonc copied."
-        warn "If you are not on Fedora, change the \"source\" value in config.jsonc to your distro name."
+
+        # config-startup.jsonc — for terminal startup (spaceship ASCII)
+        cp "$TMP_DIR/config-startup.jsonc" ~/.config/fastfetch/
+        success "config-startup.jsonc copied."
+
+        # spaceship ASCII art file
+        cp "$TMP_DIR/spaceship.txt" ~/.config/fastfetch/
+        success "spaceship.txt copied."
+
+        # Add fastfetch startup to shell rc
+        CURRENT_SHELL=$(basename "$SHELL")
+        if [[ "$CURRENT_SHELL" == "zsh" ]]; then
+            SHELL_RC="$HOME/.zshrc"
+        else
+            SHELL_RC="$HOME/.bashrc"
+        fi
+
+        STARTUP_LINE='fastfetch --config ~/.config/fastfetch/config-startup.jsonc'
+        if grep -qF "config-startup.jsonc" "$SHELL_RC" 2>/dev/null; then
+            success "Fastfetch startup already present in $SHELL_RC."
+        else
+            echo "$STARTUP_LINE" >> "$SHELL_RC"
+            success "Fastfetch startup added to $SHELL_RC."
+        fi
     else
         warn "Skipped fastfetch config."
     fi
@@ -298,7 +323,7 @@ install_starship() {
         success "Starship init already present in $SHELL_RC."
     else
         if ask " Add Starship init to $SHELL_RC?"; then
-            echo 'export PATH="/usr/local/bin:$PATH"' >> "$SHELL_RC"   # ← $ اضافه شد
+            echo 'export PATH="/usr/local/bin:$PATH"' >> "$SHELL_RC"
             echo "$INIT_LINE" >> "$SHELL_RC"
             success "Starship init added to $SHELL_RC."
         fi
