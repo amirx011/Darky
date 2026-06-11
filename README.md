@@ -14,11 +14,34 @@ A clean terminal environment for KDE Plasma (Zsh / Bash)
 
 ![Konsole](screenshots/konsole.png)
 
+
+## Structure 
+\ ```
+Darky/
+├── config.jsonc
+├── Darky.profile
+├── DarkySlate.colorscheme
+├── install.sh
+├── LICENSE
+├── README.md
+├── screenshots
+│   ├── fastfetch1.png
+│   ├── konsole.gif
+│   └── konsole.png
+├── starship.toml
+├── uninstall.sh
+└── wallpaper
+└── wallpaper.jpg
+\ ```
+
+
 ## Installation
 > Supports: Arch Linux, Arch-Based, Fedora, and RHEL-Based Distributions
 
 
-> Recommended: `chmod +x install.sh && ./install.sh`
+> Recommended:`chmod +x install.sh && ./install.sh`
+
+## Manualy install
 
 ### 1. Install Font 
 ```bash
