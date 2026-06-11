@@ -247,13 +247,13 @@ install_fastfetch() {
         cp "$TMP_DIR/config.jsonc" ~/.config/fastfetch/
         success "config.jsonc copied."
 
-        # config-startup.jsonc — for terminal startup (spaceship ASCII)
+        # config-startup.jsonc — for terminal startup (alien ASCII)
         cp "$TMP_DIR/config-startup.jsonc" ~/.config/fastfetch/
         success "config-startup.jsonc copied."
 
-        # spaceship ASCII art file
-        cp "$TMP_DIR/spaceship.txt" ~/.config/fastfetch/
-        success "spaceship.txt copied."
+        # alien ASCII art file
+        cp "$TMP_DIR/alien.txt" ~/.config/fastfetch/
+        success "alien.txt copied."
 
         # Add fastfetch startup to shell rc
         CURRENT_SHELL=$(basename "$SHELL")
