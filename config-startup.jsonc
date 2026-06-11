@@ -1,1 +1,13 @@
-ll
+"logo": {
+    "type": "file",
+    "source": "$HOME/.config/fastfetch/spaceship.txt",
+    "color": {
+      "1": "#5B9BD5",
+      "2": "white"
+    },
+    "padding": {
+      "top": 0,
+      "left": 2,
+      "right": 2
+    }
+  },
