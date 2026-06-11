@@ -18,6 +18,7 @@ A clean terminal environment for KDE Plasma (Zsh / Bash)
 ## Structure 
  ```
 Darky/
+
 ├── config.jsonc
 ├── Darky.profile
 ├── DarkySlate.colorscheme
