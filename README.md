@@ -12,6 +12,9 @@ A clean terminal environment for KDE Plasma (Zsh / Bash)
 ![Fastfetch1](screenshots/fastfetch1.png)
 
 
+![Kali-Fastfetch](screenshots/kali.png)
+
+
 ![Konsole](screenshots/konsole.png)
 
 
@@ -39,7 +42,7 @@ Darky/
 
 
 ## Installation
-> Supports: Arch Linux, Arch-Based, Fedora, and RHEL-Based Distributions
+> Supports: all distributions (Fedora,Arch-based,Arch,RHEL-Based,kali,kubuntu,...)
 
 
 > Recommended:`chmod +x install.sh && ./install.sh`
