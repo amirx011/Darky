@@ -263,7 +263,7 @@ install_fastfetch() {
             SHELL_RC="$HOME/.bashrc"
         fi
 
-        STARTUP_LINE='fastfetch --config ~/.config/fastfetch/config-startup.jsonc'
+        STARTUP_LINE="fastfetch --config $HOME/.config/fastfetch/config-startup.jsonc"
         if grep -qF "config-startup.jsonc" "$SHELL_RC" 2>/dev/null; then
             success "Fastfetch startup already present in $SHELL_RC."
         else
