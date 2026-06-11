@@ -16,7 +16,7 @@ A clean terminal environment for KDE Plasma (Zsh / Bash)
 
 
 ## Structure 
-\```
+ ```
 Darky/
 ├── config.jsonc
 ├── Darky.profile
@@ -32,7 +32,7 @@ Darky/
 ├── uninstall.sh
 └── wallpaper
 └── wallpaper.jpg
-\```
+```
 
 
 ## Installation
@@ -41,7 +41,8 @@ Darky/
 
 > Recommended:`chmod +x install.sh && ./install.sh`
 
-### Manualy install
+
+### Manually install:
 
 ### 1. Install Font 
 ```bash
