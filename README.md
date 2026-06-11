@@ -19,6 +19,7 @@ A clean terminal environment for KDE Plasma (Zsh / Bash)
  ```
 Darky/
 
+.
 ├── config.jsonc
 ├── Darky.profile
 ├── DarkySlate.colorscheme
@@ -32,7 +33,8 @@ Darky/
 ├── starship.toml
 ├── uninstall.sh
 └── wallpaper
-└── wallpaper.jpg
+   	└── wallpaper.jpg
+
 ```
 
 
