@@ -33,7 +33,7 @@ Darky/
 ├── starship.toml
 ├── uninstall.sh
 └── wallpaper
-   └── wallpaper.jpg
+    └── wallpaper.jpg
 
 ```
 
