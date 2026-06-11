@@ -22,8 +22,9 @@ A clean terminal environment for KDE Plasma (Zsh / Bash)
  ```
 Darky/
 
-.
+├── alien.txt
 ├── config.jsonc
+├── config-startup.jsonc
 ├── Darky.profile
 ├── DarkySlate.colorscheme
 ├── install.sh
@@ -31,12 +32,13 @@ Darky/
 ├── README.md
 ├── screenshots
 │   ├── fastfetch1.png
+│   ├── kali.png
 │   ├── konsole.gif
 │   └── konsole.png
 ├── starship.toml
 ├── uninstall.sh
 └── wallpaper
-     └── wallpaper.jpg
+    └── wallpaper.jpg
 
 ```
 
