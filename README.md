@@ -59,6 +59,9 @@ sudo dnf install jetbrains-mono-fonts-all
 
 #Arch
 sudo pacman -S ttf-jetbrains-mono
+
+# Ubuntu / Debian / Kali
+curl -sL https://download.jetbrains.com/fonts/JetBrainsMono-2.304.zip 
 ```
 ### 2. Konsole Theme
 ```bash
@@ -76,8 +79,12 @@ cp Darky.profile ~/.local/share/konsole
 # Fedora / RHEL-based
 sudo dnf install fastfetch
 
-#Arch
+# Arch
+
 sudo pacman -S fastfetch
+
+# Ubuntu / Debian / Kali
+curl -sL https://github.com/fastfetch-cli/fastfetch/releases/latest/download/fastfetch-linux-amd64.deb
 
 # Copy config file
 mkdir -p ~/.config/fastfetch
@@ -87,8 +94,11 @@ cp config.jsonc ~/.config/fastfetch/
 
 ### 4. Starship
 ```bash
-# Install
+# Install (All distros)
 curl -sS https://starship.rs/install.sh | sh
+
+# Arch / Arch-based (alternative)
+sudo pacman -S starship
 
 # Copy config
 cp starship.toml ~/.config/starship.toml
