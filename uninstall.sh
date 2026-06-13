@@ -3,11 +3,10 @@
 # ╔══════════════════════════════════════════════╗
 # ║         Darky-Plasma Uninstaller             ║
 # ║  Supports: Arch | Fedora | RHEL-based        ║
+# ║            Kali | Ubuntu                     ║
 # ╚══════════════════════════════════════════════╝
 
 set -e
-
-REPO_CLONE_DIR="$HOME/Darky"
 
 # ─── Colors ───────────────────────────────────
 RED='\033[0;31m'
@@ -43,73 +42,124 @@ detect_distro() {
         error "Could not detect distro. /etc/os-release not found."
     fi
 
-    if [[ "$DISTRO_ID" == "arch" || "$DISTRO_LIKE" == *"arch"* ]]; then
+    if [[ "$DISTRO_ID" == "arch" || "$DISTRO_LIKE" == *"arch"* ||
+          "$DISTRO_ID" == "parch" || "$DISTRO_ID" == "manjaro" ]]; then
         PKG_MANAGER="pacman"
-        info "Detected distro: Arch Linux"
-    elif [[ "$DISTRO_ID" == "fedora" ]]; then
+    elif [[ "$DISTRO_ID" == "fedora" || "$DISTRO_LIKE" == *"rhel"* ||
+            "$DISTRO_LIKE" == *"fedora"* || "$DISTRO_ID" == "rhel" ||
+            "$DISTRO_ID" == "centos" || "$DISTRO_ID" == "almalinux" ||
+            "$DISTRO_ID" == "rocky" ]]; then
         PKG_MANAGER="dnf"
-        info "Detected distro: Fedora"
-    elif [[ "$DISTRO_LIKE" == *"rhel"* || "$DISTRO_LIKE" == *"fedora"* || \
-            "$DISTRO_ID" == "rhel" || "$DISTRO_ID" == "centos" || \
-            "$DISTRO_ID" == "almalinux" || "$DISTRO_ID" == "rocky" ]]; then
-        PKG_MANAGER="dnf"
-        info "Detected distro: RHEL-based ($PRETTY_NAME)"
+    elif [[ "$DISTRO_ID" == "kali" || "$DISTRO_ID" == "ubuntu" ]]; then
+        PKG_MANAGER="apt"
     else
         error "Unsupported distro: $PRETTY_NAME"
     fi
+
+    info "Detected distro: ${PRETTY_NAME}"
 }
 
-# ─── Remove a package ─────────────────────────
+# ─── Helper: check if package installed ───────
+pkg_installed() {
+    local pkg="$1"
+    case "$PKG_MANAGER" in
+        pacman) pacman -Qi "$pkg" &>/dev/null ;;
+        dnf)    rpm -q "$pkg" &>/dev/null ;;
+        apt)    dpkg -l "$pkg" 2>/dev/null | grep -q "^ii" ;;
+    esac
+}
+
+# ─── Helper: remove package ───────────────────
 remove_pkg() {
     local pkg="$1"
-    local display="${2:-$1}"
-
-    local installed=false
-    if [[ "$PKG_MANAGER" == "pacman" ]] && pacman -Q "$pkg" &>/dev/null; then
-        installed=true
-    elif [[ "$PKG_MANAGER" == "dnf" ]] && rpm -q "$pkg" &>/dev/null; then
-        installed=true
-    fi
-
-    if $installed; then
-        info "Removing ${display}..."
-        if [[ "$PKG_MANAGER" == "pacman" ]]; then
-            sudo pacman -Rns --noconfirm "$pkg"
-        else
-            sudo dnf remove -y "$pkg"
-        fi
-        success "${display} removed."
-    else
-        info "${display} is not installed. Skipping."
-    fi
+    case "$PKG_MANAGER" in
+        pacman) sudo pacman -Rns --noconfirm "$pkg" ;;
+        dnf)    sudo dnf remove -y "$pkg" ;;
+        apt)    sudo apt remove -y --autoremove "$pkg" ;;
+    esac
 }
 
-# ─── Step 1: Konsole theme & default profile ──
+# ─── Step 1: KDE Rounded Corners ──────────────
+remove_rounded_corners() {
+    echo ""
+    echo -e "${BOLD}━━━ Step 1: KDE Rounded Corners ━━━${RESET}"
+
+    # COPR فقط روی dnf موجوده
+    if [[ "$PKG_MANAGER" != "dnf" ]]; then
+        info "Rounded Corners via COPR is only for Fedora/RHEL. Skipping."
+        return
+    fi
+
+    if ! pkg_installed "kwin-effect-roundcorners"; then
+        info "kwin-effect-roundcorners is not installed. Skipping."
+        return
+    fi
+
+    if ! ask "  Remove kwin-effect-roundcorners and disable COPR?"; then
+        warn "Skipped KDE Rounded Corners removal."
+        return
+    fi
+
+    sudo dnf remove -y kwin-effect-roundcorners
+    success "kwin-effect-roundcorners removed."
+
+    if sudo dnf copr disable -y matinlotfali/KDE-Rounded-Corners 2>/dev/null; then
+        success "COPR repository disabled."
+    else
+        warn "Could not disable COPR automatically."
+        warn "Run manually: sudo dnf copr disable matinlotfali/KDE-Rounded-Corners"
+    fi
+
+    # برگرداندن تنظیمات kwinrc
+    if command -v kwriteconfig5 &>/dev/null; then
+        kwriteconfig5 --file kwinrc --group Plugins \
+            --key roundcornersEnabled "false"
+        kwriteconfig5 --file kwinrc --group Effect-RoundedCorners \
+            --key Squircleness --delete 2>/dev/null || true
+        kwriteconfig5 --file breezerc \
+            --group "Windeco Exception 0" \
+            --key OutlineIntensity --delete 2>/dev/null || true
+        success "KWin config restored."
+    fi
+
+    # reload زنده
+    for bus in qdbus qdbus6; do
+        if command -v "$bus" &>/dev/null; then
+            "$bus" org.kde.KWin /KWin reconfigure 2>/dev/null && \
+                success "KWin reconfigured live." && break || true
+        fi
+    done
+}
+
+# ─── Step 2: Konsole theme ────────────────────
 remove_konsole() {
     echo ""
-    echo -e "${BOLD}━━━ Step 1: Konsole Theme ━━━${RESET}"
+    echo -e "${BOLD}━━━ Step 2: Konsole Theme ━━━${RESET}"
 
-    # Remove colorscheme
-    if [ -f ~/.local/share/konsole/DarkySlate.colorscheme ]; then
-        rm -f ~/.local/share/konsole/DarkySlate.colorscheme
-        success "DarkySlate.colorscheme removed."
-    else
-        info "DarkySlate.colorscheme not found. Skipping."
-    fi
-
-    # Remove profile
-    if [ -f ~/.local/share/konsole/Darky.profile ]; then
-        rm -f ~/.local/share/konsole/Darky.profile
-        success "Darky.profile removed."
-    else
-        info "Darky.profile not found. Skipping."
-    fi
-
-    # Reset default profile in konsolerc
+    local konsole_dir="$HOME/.local/share/konsole"
     local konsolerc="$HOME/.config/konsolerc"
-    if [ -f "$konsolerc" ] && grep -q "DefaultProfile=Darky" "$konsolerc"; then
+
+    if [[ ! -f "$konsole_dir/DarkySlate.colorscheme" &&
+          ! -f "$konsole_dir/Darky.profile" ]]; then
+        info "Darky Konsole theme not found. Skipping."
+        return
+    fi
+
+    if ! ask "  Remove Darky Konsole theme?"; then
+        warn "Skipped Konsole theme removal."
+        return
+    fi
+
+    rm -f "$konsole_dir/DarkySlate.colorscheme" \
+          "$konsole_dir/Darky.profile"
+    success "Konsole theme files removed."
+
+    # ریست پروفایل پیش‌فرض
+    if [ -f "$konsolerc" ]; then
         if command -v kwriteconfig5 &>/dev/null; then
-            kwriteconfig5 --file "$konsolerc" --group "Desktop Entry" --key "DefaultProfile" ""
+            kwriteconfig5 --file "$konsolerc" \
+                --group "Desktop Entry" \
+                --key "DefaultProfile" --delete 2>/dev/null || true
         else
             sed -i '/^DefaultProfile=Darky/d' "$konsolerc"
         fi
@@ -117,97 +167,101 @@ remove_konsole() {
     fi
 }
 
-# ─── Step 2: Fastfetch config only ───────────
-remove_fastfetch_config() {
+# ─── Step 3: Wallpaper ────────────────────────
+remove_wallpaper() {
     echo ""
-    echo -e "${BOLD}━━━ Step 2: Fastfetch Config ━━━${RESET}"
+    echo -e "${BOLD}━━━ Step 3: Wallpaper ━━━${RESET}"
 
-    if [ -f ~/.config/fastfetch/config.jsonc ]; then
-        rm -f ~/.config/fastfetch/config.jsonc
-        rmdir --ignore-fail-on-non-empty ~/.config/fastfetch 2>/dev/null || true
-        success "Fastfetch config removed (fastfetch itself kept)."
-    else
-        info "Fastfetch config not found. Skipping."
+    local wp_dir="$HOME/.local/share/wallpapers/Darky"
+
+    if [ ! -d "$wp_dir" ]; then
+        info "Darky wallpaper directory not found. Skipping."
+        return
     fi
+
+    if ! ask "  Remove Darky wallpaper?"; then
+        warn "Skipped wallpaper removal."
+        return
+    fi
+
+    rm -rf "$wp_dir"
+    success "Darky wallpaper removed."
+    warn "Current desktop wallpaper unchanged. Set a new one manually in KDE settings."
 }
 
-# ─── Step 3: Starship ─────────────────────────
+# ─── Step 4: Starship ─────────────────────────
 remove_starship() {
     echo ""
-    echo -e "${BOLD}━━━ Step 3: Starship Prompt ━━━${RESET}"
+    echo -e "${BOLD}━━━ Step 4: Starship Prompt ━━━${RESET}"
 
-    # Remove config
-    if [ -f ~/.config/starship.toml ]; then
-        rm -f ~/.config/starship.toml
-        success "starship.toml removed."
-    else
-        info "starship.toml not found. Skipping."
+    # چک می‌کنیم باینری وجود داره یا نه (هر روشی نصب شده باشه)
+    if ! command -v starship &>/dev/null; then
+        info "Starship is not installed. Skipping."
+        return
     fi
 
-    # Remove init line from shell rc
-    CURRENT_SHELL=$(basename "$SHELL")
-    if [[ "$CURRENT_SHELL" == "zsh" ]]; then
-        SHELL_RC="$HOME/.zshrc"
-    elif [[ "$CURRENT_SHELL" == "bash" ]]; then
-        SHELL_RC="$HOME/.bashrc"
-    else
-        SHELL_RC=""
+    if ! ask "  Remove Starship prompt?"; then
+        warn "Skipped Starship removal."
+        return
     fi
 
-    if [ -n "$SHELL_RC" ] && grep -qF "starship init" "$SHELL_RC" 2>/dev/null; then
-        sed -i '/starship init/d' "$SHELL_RC"
-        success "Starship init line removed from $SHELL_RC."
+    # اگه با package manager نصب شده حذفش می‌کنیم
+    if pkg_installed "starship" 2>/dev/null; then
+        remove_pkg "starship"
+        success "Starship removed via ${PKG_MANAGER}."
     fi
 
-    # Remove binary
-    if [ -f ~/.cargo/bin/starship ]; then
-        rm -f ~/.cargo/bin/starship
-        success "Starship binary removed from ~/.cargo/bin."
-    elif [ -f /usr/local/bin/starship ]; then
-        sudo rm -f /usr/local/bin/starship
-        success "Starship binary removed from /usr/local/bin."
-    else
-        info "Starship binary not found. Skipping."
-    fi
-}
+    # اگه با curl نصب شده بود باینری مستقیم حذف می‌شه
+    sudo rm -f /usr/local/bin/starship
+    success "Starship binary removed."
 
-# ─── Step 4: JetBrains Mono Font ──────────────
-remove_font() {
-    echo ""
-    echo -e "${BOLD}━━━ Step 4: JetBrains Mono Font ━━━${RESET}"
-
-    if [[ "$PKG_MANAGER" == "pacman" ]]; then
-        remove_pkg "ttf-jetbrains-mono" "JetBrains Mono (Arch)"
-    else
-        remove_pkg "jetbrains-mono-fonts-all" "JetBrains Mono (Fedora/RHEL)"
-    fi
-}
-
-# ─── Step 5: Cloned repo ──────────────────────
-remove_cloned_repo() {
-    echo ""
-    echo -e "${BOLD}━━━ Step 5: Cloned Repository ━━━${RESET}"
-
-    # Check common clone locations
-    local found_path=""
-    for path in "$HOME/Darky" "$HOME/darky" "/tmp/darky-install"; do
-        if [ -d "$path" ]; then
-            found_path="$path"
-            break
+    # پاک‌کردن از هر دو shell rc
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+        if [ -f "$rc" ]; then
+            sed -i '/starship init/d' "$rc"
+            sed -i '\|export PATH="/usr/local/bin|d' "$rc"
+            success "Starship init removed from $(basename "$rc")."
         fi
     done
 
-    if [ -n "$found_path" ]; then
-        echo -e "  Found cloned repo at: ${BOLD}$found_path${RESET}"
-        if ask "  Do you want to delete the cloned Darky repository?"; then
-            rm -rf "$found_path"
-            success "Cloned repository removed ($found_path)."
-        else
-            info "Cloned repository kept at $found_path."
-        fi
-    else
-        info "No cloned repository found. Skipping."
+    rm -f "$HOME/.config/starship.toml"
+    success "starship.toml removed."
+}
+
+# ─── Step 5: Darky fastfetch configs ──────────
+remove_darky_configs() {
+    echo ""
+    echo -e "${BOLD}━━━ Step 5: Darky Config Files ━━━${RESET}"
+
+    local has_files=0
+    for f in "$HOME/.config/fastfetch/config.jsonc" \
+             "$HOME/.config/fastfetch/config-startup.jsonc" \
+             "$HOME/.config/fastfetch/alien.txt"; do
+        [ -f "$f" ] && has_files=1 && break
+    done
+
+    if [[ "$has_files" == "0" ]]; then
+        info "No Darky fastfetch config files found. Skipping."
+        return
     fi
+
+    if ! ask "  Remove Darky fastfetch config files?"; then
+        warn "Skipped config cleanup."
+        return
+    fi
+
+    rm -f "$HOME/.config/fastfetch/config.jsonc" \
+          "$HOME/.config/fastfetch/config-startup.jsonc" \
+          "$HOME/.config/fastfetch/alien.txt"
+    success "Darky fastfetch configs removed."
+
+    # حذف startup line از shell rc ها
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+        if [ -f "$rc" ]; then
+            sed -i '/config-startup\.jsonc/d' "$rc"
+        fi
+    done
+    success "Fastfetch startup line removed from shell rc files."
 }
 
 # ─── Main ─────────────────────────────────────
@@ -217,20 +271,28 @@ main() {
     echo -e "${BOLD}${RED}║    Darky-Plasma Uninstaller    ║${RESET}"
     echo -e "${BOLD}${RED}╚════════════════════════════════╝${RESET}"
     echo ""
-    warn "This will remove all Darky components from your system."
+    echo -e "  ${YELLOW}This will revert Darky changes step by step.${RESET}"
+    echo -e "  ${CYAN}Zsh, Fastfetch, and JetBrains Mono will NOT be touched.${RESET}"
     echo ""
+
+    if ! ask "  Continue with uninstall?"; then
+        info "Uninstall cancelled."
+        exit 0
+    fi
 
     detect_distro
 
-    remove_konsole
-    remove_fastfetch_config
-    remove_starship
-    remove_font
-    remove_cloned_repo
+    remove_rounded_corners   # Step 1
+    remove_konsole           # Step 2
+    remove_wallpaper         # Step 3
+    remove_starship          # Step 4
+    remove_darky_configs     # Step 5
 
     echo ""
-    echo -e "${GREEN}${BOLD}✔ Uninstall complete!${RESET}"
-    echo -e "  Restart your terminal for all changes to take effect."
+    echo -e "${GREEN}${BOLD}✔ Darky has been removed. System restored.${RESET}"
+    echo ""
+    warn "Zsh, Fastfetch, and JetBrains Mono were intentionally kept."
+    warn "Re-login or restart your terminal for all changes to take effect."
     echo ""
 }
 
