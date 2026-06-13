@@ -317,8 +317,6 @@ install_wallpaper() {
     echo -e "  ${CYAN}2)${RESET} wallpaper2.jpg"
     echo -e "  ${CYAN}3)${RESET} wallpaper3.jpg"
     echo -e "  ${CYAN}4)${RESET} wallpaper4.jpg"
-    echo -e "  ${CYAN}5)${RESET} wallpaper5.jpg"
-    echo -e "  ${CYAN}6)${RESET} wallpaper6.jpg"
     echo ""
 
     while true; do
