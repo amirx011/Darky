@@ -457,34 +457,10 @@ install_starship() {
 
 # ─── Cleanup ──────────────────────────────────
 cleanup() {
-    rm -rf "$TMP_DIR"
-}
-
-# ─── Auto-apply: set Darky as default Konsole profile ─────
-apply_konsole_profile() {
-    local profile_name="Darky"
-    local konsolerc="$HOME/.config/konsolerc"
-
-    if command -v kwriteconfig5 &>/dev/null; then
-        kwriteconfig5 --file "$konsolerc" \
-            --group "Desktop Entry" \
-            --key "DefaultProfile" "${profile_name}.profile"
-        success "Darky set as default Konsole profile."
-    else
-        mkdir -p "$(dirname "$konsolerc")"
-        if [ -f "$konsolerc" ]; then
-            if grep -q "DefaultProfile" "$konsolerc"; then
-                sed -i "s/^DefaultProfile=.*/DefaultProfile=${profile_name}.profile/" "$konsolerc"
-            elif grep -q "\[Desktop Entry\]" "$konsolerc"; then
-                sed -i "/\[Desktop Entry\]/a DefaultProfile=${profile_name}.profile" "$konsolerc"
-            else
-                echo -e "\n[Desktop Entry]\nDefaultProfile=${profile_name}.profile" >> "$konsolerc"
-            fi
-        else
-            echo -e "[Desktop Entry]\nDefaultProfile=${profile_name}.profile" > "$konsolerc"
-        fi
-        success "Darky set as default Konsole profile (manual edit)."
+    if [ "$TMP_DIR" != "/tmp/darky-install" ]; then
+        return
     fi
+    rm -rf "$TMP_DIR"
 }
 
 # ─── Auto-apply: source shell rc ──────────────
