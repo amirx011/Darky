@@ -115,13 +115,24 @@ clone_repo() {
     if [ -f "$SCRIPT_DIR/Darky.profile" ]; then
         info "Using local repo directory: $SCRIPT_DIR"
         TMP_DIR="$SCRIPT_DIR"
-        return  
+        return
     fi
 
     info "Cloning Darky repository..."
     rm -rf "$TMP_DIR"
     git clone --depth=1 "$REPO_URL" "$TMP_DIR"
     success "Repository cloned."
+}
+
+# ─── Helper: detect kwriteconfig ──────────────
+detect_kwrite() {
+    if command -v kwriteconfig6 &>/dev/null; then
+        KWRITE="kwriteconfig6"
+    elif command -v kwriteconfig5 &>/dev/null; then
+        KWRITE="kwriteconfig5"
+    else
+        KWRITE=""
+    fi
 }
 
 # ─── Step 0: Shell selection (Bash or Zsh) ────
@@ -248,22 +259,26 @@ install_rounded_corners() {
     sudo dnf install -y kwin-effect-roundcorners
     success "kwin-effect-roundcorners installed."
 
-    kwriteconfig5 --file kwinrc --group Plugins         --key roundcornersEnabled "true"
-    kwriteconfig5 --file kwinrc --group Effect-RoundedCorners --key Squircleness  "0.60"
-    success "Squircleness set to 0.60."
+    # ① اصلاح: detect kwriteconfig5 یا kwriteconfig6
+    detect_kwrite
+    if [ -z "$KWRITE" ]; then
+        warn "kwriteconfig not found. Skipping KWin config. Set Squircleness manually."
+    else
+        $KWRITE --file kwinrc --group Plugins --key roundcornersEnabled "true"
+        $KWRITE --file kwinrc --group Effect-RoundedCorners --key Squircleness "0.60"
+        $KWRITE --file breezerc --group "Windeco Exception 0" --key OutlineIntensity "OutlineOff"
+        success "Squircleness set to 0.60."
+    fi
 
-    kwriteconfig5 --file breezerc \
-        --group "Windeco Exception 0" \
-        --key OutlineIntensity "OutlineOff"
-
-    if command -v qdbus &>/dev/null; then
-        qdbus org.kde.KWin /KWin reconfigure 2>/dev/null \
-            && success "KWin reconfigured (changes applied live)." \
-            || warn "Changes will apply after next login."
-    elif command -v qdbus6 &>/dev/null; then
+    # ③ اصلاح: || true برای جلوگیری از crash با set -e
+    if command -v qdbus6 &>/dev/null; then
         qdbus6 org.kde.KWin /KWin reconfigure 2>/dev/null \
             && success "KWin reconfigured (changes applied live)." \
-            || warn "Changes will apply after next login."
+            || true
+    elif command -v qdbus &>/dev/null; then
+        qdbus org.kde.KWin /KWin reconfigure 2>/dev/null \
+            && success "KWin reconfigured (changes applied live)." \
+            || true
     else
         warn "qdbus not found. Changes will apply after next login."
     fi
@@ -431,7 +446,7 @@ install_starship() {
     else
         warn "Skipped starship.toml."
     fi
-    
+
     if [[ "$CHOSEN_SHELL" == "zsh" ]]; then
         INIT_LINE='eval "$(starship init zsh)"'
     else
@@ -458,6 +473,35 @@ cleanup() {
     rm -rf "$TMP_DIR"
 }
 
+# ─── Auto-apply: set Darky as default Konsole profile ─────
+# ② اصلاح: برگشت به main + پشتیبانی از kwriteconfig5 و kwriteconfig6
+apply_konsole_profile() {
+    local profile_name="Darky"
+    local konsolerc="$HOME/.config/konsolerc"
+
+    detect_kwrite
+    if [ -n "$KWRITE" ]; then
+        $KWRITE --file "$konsolerc" \
+            --group "Desktop Entry" \
+            --key "DefaultProfile" "${profile_name}.profile"
+        success "Darky set as default Konsole profile."
+    else
+        mkdir -p "$(dirname "$konsolerc")"
+        if [ -f "$konsolerc" ]; then
+            if grep -q "DefaultProfile" "$konsolerc"; then
+                sed -i "s/^DefaultProfile=.*/DefaultProfile=${profile_name}.profile/" "$konsolerc"
+            elif grep -q "\[Desktop Entry\]" "$konsolerc"; then
+                sed -i "/\[Desktop Entry\]/a DefaultProfile=${profile_name}.profile" "$konsolerc"
+            else
+                echo -e "\n[Desktop Entry]\nDefaultProfile=${profile_name}.profile" >> "$konsolerc"
+            fi
+        else
+            echo -e "[Desktop Entry]\nDefaultProfile=${profile_name}.profile" > "$konsolerc"
+        fi
+        success "Darky set as default Konsole profile (manual edit)."
+    fi
+}
+
 # ─── Auto-apply: source shell rc ──────────────
 apply_shell_rc() {
     if [ -f "$SHELL_RC" ]; then
@@ -468,14 +512,20 @@ apply_shell_rc() {
 }
 
 # ─── Relaunch Konsole with Darky profile ──────
+# ④ اصلاح: فقط اگه از داخل Konsole اجرا شده terminal رو ببنده
 relaunch_konsole() {
     if command -v konsole &>/dev/null; then
         info "Relaunching Konsole with Darky profile..."
         nohup konsole --profile "Darky" &>/dev/null &
         disown
         success "New Konsole window opened with Darky profile."
-        sleep 1
-        kill -TERM $PPID 2>/dev/null || exit 0
+
+        # فقط اگه parent process خود Konsole باشه پنجره قدیمی رو ببند
+        PARENT_NAME="$(ps -o comm= -p $PPID 2>/dev/null || true)"
+        if [[ "$PARENT_NAME" == "konsole" ]]; then
+            sleep 1
+            kill -TERM $PPID 2>/dev/null || true
+        fi
     else
         warn "Konsole not found. Please restart your terminal manually."
     fi
@@ -495,7 +545,7 @@ main() {
 
     install_shell           # Step 0 — Bash یا Zsh
     install_font            # Step 1
-    install_rounded_corners # Step 2 — KDE Rounded Corners (با سوال از کاربر)
+    install_rounded_corners # Step 2 — KDE Rounded Corners
     install_konsole         # Step 3
     install_wallpaper       # Step 4 — انتخاب والپیپر 0 تا 6
     install_fastfetch       # Step 5
@@ -507,6 +557,7 @@ main() {
     echo -e "${GREEN}${BOLD}✔ Installation complete!${RESET}"
     echo ""
 
+    apply_konsole_profile   # ② برگشت به main
     apply_shell_rc
 
     echo ""
