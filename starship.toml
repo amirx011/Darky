@@ -6,6 +6,7 @@
 # ***Enable:  echo 'eval "$(starship init zsh)"' >> ~/.zshrc***
 # ─────────────────────────────────────────────────────
 
+scan_timeout = 5
 "$schema" = 'https://starship.rs/config-schema.json'
 
 format = """
@@ -47,7 +48,6 @@ vimcmd_symbol  = "[❮](bold #C5DAFF)"
 style                     = "bold #C5DAFF"
 truncation_length         = 3
 truncate_to_repo          = true
-scan_timeout              = 5
 read_only                 = " ro"
 read_only_style           = "#F08282"
 before_repo_root_style    = "#6B7FA0"
