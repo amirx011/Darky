@@ -22,6 +22,7 @@ A clean terminal environment for KDE Plasma (Zsh / Bash)
  ```
 Darky/
 
+.
 ├── alien.txt
 ├── config.jsonc
 ├── config-startup.jsonc
@@ -37,8 +38,12 @@ Darky/
 │   └── konsole.png
 ├── starship.toml
 ├── uninstall.sh
-└── wallpaper
-    └── wallpaper.jpg
+└── wallpapers
+├── wallpaper0.jpg
+├── wallpaper1.jpg
+├── wallpaper2.jpg
+├── wallpaper3.jpg
+└── wallpaper4.jpg
 
 ```
 
@@ -86,9 +91,11 @@ sudo pacman -S fastfetch
 # Ubuntu / Debian / Kali
 curl -sL https://github.com/fastfetch-cli/fastfetch/releases/latest/download/fastfetch-linux-amd64.deb
 
-# Copy config file
+# Copy config files
 mkdir -p ~/.config/fastfetch
 cp config.jsonc ~/.config/fastfetch/
+cp config-startup.jsonc ~/.config/fastfetch
+cp alien.txt ~/.config/fastfetch
 ```
 > For other distros, change `"source": "Fedora"` in config.jsonc to your distro name
 

@@ -9,9 +9,8 @@
     }
   },
   "display": {
-    "separator": "        ",
+    "separator": "  ",
     "color": {
-      "keys": "blue",
       "title": "cyan",
       "separator": "38;5;61"
     }
@@ -24,84 +23,84 @@
     "separator",
     {
       "type": "host",
-      "key": "  \u001b[94mHost\u001b[0m",
-      "keyWidth": 12
+      "key": " \u001b[38;5;75m\uf10c  Host\u001b[0m",
+      "keyWidth": 14
     },
     {
       "type": "os",
-      "key": "  \u001b[94mOS\u001b[0m",
-      "keyWidth": 12
+      "key": " \u001b[38;5;74m\uf17c  OS\u001b[0m",
+      "keyWidth": 14
     },
     {
       "type": "kernel",
-      "key": "  \u001b[94mKernel\u001b[0m",
-      "keyWidth": 12
+      "key": " \u001b[38;5;73m\ueb61  Kernel\u001b[0m",
+      "keyWidth": 14
     },
     {
       "type": "uptime",
-      "key": "  \u001b[96mUptime\u001b[0m",
-      "keyWidth": 12
+      "key": " \u001b[38;5;72m\uf017  Uptime\u001b[0m",
+      "keyWidth": 14
     },
     {
       "type": "packages",
-      "key": "  \u001b[94mPackages\u001b[0m",
-      "keyWidth": 12
+      "key": " \u001b[38;5;71m\ueb29  Packages\u001b[0m",
+      "keyWidth": 14
     },
     {
       "type": "shell",
-      "key": "  \u001b[96mShell\u001b[0m",
-      "keyWidth": 12
+      "key": " \u001b[38;5;74m\uf489  Shell\u001b[0m",
+      "keyWidth": 14
     },
     {
       "type": "display",
-      "key": "  \u001b[94mDisplay\u001b[0m",
-      "keyWidth": 12
+      "key": " \u001b[38;5;75m\udb83\ude51  Display\u001b[0m",
+      "keyWidth": 14
     },
     {
       "type": "de",
-      "key": "  \u001b[96mDE\u001b[0m",
-      "keyWidth": 12
+      "key": " \u001b[38;5;73m\ueb7f  DE\u001b[0m",
+      "keyWidth": 14
     },
     {
       "type": "wm",
-      "key": "  \u001b[94mWM\u001b[0m",
-      "keyWidth": 12
+      "key": " \u001b[38;5;72m\uf4a9  WM\u001b[0m",
+      "keyWidth": 14
     },
     {
       "type": "terminal",
-      "key": "  \u001b[96mTerminal\u001b[0m",
-      "keyWidth": 12
+      "key": " \u001b[38;5;74m\uf120  Terminal\u001b[0m",
+      "keyWidth": 14
     },
     {
       "type": "cpu",
-      "key": "  \u001b[94mCPU\u001b[0m",
-      "keyWidth": 12
+      "key": " \u001b[38;5;69m\uf4bc  CPU\u001b[0m",
+      "keyWidth": 14
     },
     {
       "type": "gpu",
-      "key": "  \u001b[96mGPU\u001b[0m",
-      "keyWidth": 12
+      "key": " \u001b[38;5;68m\uf1b2  GPU\u001b[0m",
+      "keyWidth": 14
     },
     {
       "type": "memory",
-      "key": "  \u001b[94mMemory\u001b[0m",
-      "keyWidth": 12
+      "key": " \u001b[38;5;67m\uf1c0  Memory\u001b[0m",
+      "keyWidth": 14
     },
     {
       "type": "swap",
-      "key": "  \u001b[94mSwap\u001b[0m",
-      "keyWidth": 12
+      "key": " \u001b[38;5;66m\uf0c7  Swap\u001b[0m",
+      "keyWidth": 14
     },
     {
       "type": "disk",
-      "key": "  \u001b[96mDisk\u001b[0m",
-      "keyWidth": 12
+      "key": " \u001b[38;5;65m\uf0a0  Disk\u001b[0m",
+      "keyWidth": 14
     },
     "break",
     {
       "type": "colors",
       "symbol": "circle",
-      "paddingLeft": 0
+      "paddingLeft": 1
     }
   ]
 }
