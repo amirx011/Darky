@@ -1,6 +1,6 @@
 [General]
 Description=Darky Slate
-Opacity=0.85
+Opacity=0.80
 Wallpaper=
 
 [Background]
@@ -61,35 +61,35 @@ Color=180,155,100
 [Color3Intense]
 Color=245,220,165
 
-; --- Blue (primary accent) ---
+; --- Blue (primary accent - slightly richer pastel) ---
 [Color4]
-Color=168,199,250
+Color=148,185,248
 
 [Color4Faint]
-Color=120,155,210
+Color=100,140,205
 
 [Color4Intense]
-Color=197,218,255
+Color=180,208,255
 
 ; --- Magenta (secondary, subtle purple-blue) ---
 [Color5]
-Color=185,175,230
+Color=170,160,228
 
 [Color5Faint]
-Color=140,132,185
+Color=125,118,180
 
 [Color5Intense]
-Color=210,202,248
+Color=198,190,248
 
-; --- Cyan (links, highlights) ---
+; --- Cyan (links, highlights - slightly deeper) ---
 [Color6]
-Color=140,215,230
+Color=118,202,222
 
 [Color6Faint]
-Color=100,165,180
+Color=82,152,172
 
 [Color6Intense]
-Color=170,235,248
+Color=150,225,245
 
 ; --- White (muted foreground) ---
 [Color7]
@@ -102,9 +102,13 @@ Color=175,190,215
 Color=243,247,253
 
 [Cursor]
-Color=168,199,250
+Color=148,185,248
 UseCustomColor=true
 
 [Selection]
-Background=42,65,95
+Background=38,60,92
 Foreground=243,247,253
+
+[Blur]
+Enabled=true
+Strength=8
