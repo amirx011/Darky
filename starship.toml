@@ -6,8 +6,8 @@
 # ***Enable:  echo 'eval "$(starship init zsh)"' >> ~/.zshrc***
 # ─────────────────────────────────────────────────────
 
-scan_timeout = 5
 "$schema" = 'https://starship.rs/config-schema.json'
+scan_timeout = 5
 
 format = """
 $directory\
