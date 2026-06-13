@@ -394,11 +394,9 @@ install_starship() {
 
         info "Installing Starship..."
 
-        # روش نصب بر اساس distro
         if [[ "$PKG_MANAGER" == "pacman" ]]; then
             sudo pacman -S --noconfirm starship
         elif [[ "$PKG_MANAGER" == "dnf" ]]; then
-            # Fedora 37+ و RHEL9+ دارن starship توی مخزن رسمی
             if sudo dnf install -y starship 2>/dev/null; then
                 success "Starship installed via dnf."
             else
@@ -411,7 +409,6 @@ install_starship() {
                 fi
             fi
         elif [[ "$PKG_MANAGER" == "apt" ]]; then
-            # Ubuntu 24.04+ دارن starship
             if sudo apt install -y starship 2>/dev/null; then
                 success "Starship installed via apt."
             else
@@ -434,8 +431,7 @@ install_starship() {
     else
         warn "Skipped starship.toml."
     fi
-
-    # اضافه کردن init به shell rc
+    
     if [[ "$CHOSEN_SHELL" == "zsh" ]]; then
         INIT_LINE='eval "$(starship init zsh)"'
     else
@@ -446,7 +442,6 @@ install_starship() {
         success "Starship init already present in $SHELL_RC."
     else
         if ask "  Add Starship init to $SHELL_RC?"; then
-            # اطمینان از اینکه /usr/local/bin در PATH باشه (برای نصب با curl)
             grep -qF '/usr/local/bin' "$SHELL_RC" \
                 || echo 'export PATH="/usr/local/bin:$PATH"' >> "$SHELL_RC"
             echo "$INIT_LINE" >> "$SHELL_RC"
@@ -512,7 +507,6 @@ main() {
     echo -e "${GREEN}${BOLD}✔ Installation complete!${RESET}"
     echo ""
 
-    apply_konsole_profile
     apply_shell_rc
 
     echo ""
