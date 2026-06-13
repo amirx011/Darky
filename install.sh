@@ -111,6 +111,13 @@ check_git() {
 
 # ─── Clone repo ───────────────────────────────
 clone_repo() {
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [ -f "$SCRIPT_DIR/Darky.profile" ]; then
+        info "Using local repo directory: $SCRIPT_DIR"
+        TMP_DIR="$SCRIPT_DIR"
+        return  
+    fi
+
     info "Cloning Darky repository..."
     rm -rf "$TMP_DIR"
     git clone --depth=1 "$REPO_URL" "$TMP_DIR"
