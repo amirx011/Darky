@@ -52,6 +52,7 @@ read_only_style           = "#F08282"
 before_repo_root_style    = "#6B7FA0"
 repo_root_style           = "bold #D7E7FF"
 format                    = "[$path]($style)[$read_only]($read_only_style) "
+scan_timeout = 5
 
 [git_branch]
 symbol    = ""
