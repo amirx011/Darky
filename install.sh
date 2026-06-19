@@ -308,7 +308,7 @@ install_konsole() {
 # ─── Step 4: Fastfetch ────────────────────────
 install_fastfetch() {
     echo ""
-    echo -e "${BOLD}━━━ Step 5: Fastfetch ━━━${RESET}"
+    echo -e "${BOLD}━━━ Step 4: Fastfetch ━━━${RESET}"
 
     if ! command -v fastfetch &>/dev/null; then
         if [[ "$PKG_MANAGER" == "apt" ]]; then
@@ -353,10 +353,10 @@ install_fastfetch() {
     fi
 }
 
-# ─── Step 6: Starship ─────────────────────────
+# ─── Step 5: Starship ─────────────────────────
 install_starship() {
     echo ""
-    echo -e "${BOLD}━━━ Step 6: Starship Prompt ━━━${RESET}"
+    echo -e "${BOLD}━━━ Step 5: Starship Prompt ━━━${RESET}"
 
     if ! command -v starship &>/dev/null; then
         if ! ask "  Install Starship prompt?"; then
