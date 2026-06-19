@@ -84,7 +84,6 @@ remove_rounded_corners() {
     echo ""
     echo -e "${BOLD}━━━ Step 1: KDE Rounded Corners ━━━${RESET}"
 
-    # COPR فقط روی dnf موجوده
     if [[ "$PKG_MANAGER" != "dnf" ]]; then
         info "Rounded Corners via COPR is only for Fedora/RHEL. Skipping."
         return
@@ -110,7 +109,6 @@ remove_rounded_corners() {
         warn "Run manually: sudo dnf copr disable matinlotfali/KDE-Rounded-Corners"
     fi
 
-    # برگرداندن تنظیمات kwinrc
     if command -v kwriteconfig6 &>/dev/null; then
         local kwc="kwriteconfig6"
     elif command -v kwriteconfig5 &>/dev/null; then
@@ -128,7 +126,6 @@ remove_rounded_corners() {
         success "KWin config restored."
     fi
 
-    # reload زنده
     for bus in qdbus qdbus6; do
         if command -v "$bus" &>/dev/null; then
             "$bus" org.kde.KWin /KWin reconfigure 2>/dev/null && \
@@ -180,9 +177,8 @@ remove_konsole() {
 # ─── Step 3: Starship ─────────────────────────
 remove_starship() {
     echo ""
-    echo -e "${BOLD}━━━ Step 4: Starship Prompt ━━━${RESET}"
+    echo -e "${BOLD}━━━ Step 3: Starship Prompt ━━━${RESET}"
 
-    # چک می‌کنیم باینری وجود داره یا نه (هر روشی نصب شده باشه)
     if ! command -v starship &>/dev/null; then
         info "Starship is not installed. Skipping."
         return
@@ -193,17 +189,14 @@ remove_starship() {
         return
     fi
 
-    # اگه با package manager نصب شده حذفش می‌کنیم
     if pkg_installed "starship" 2>/dev/null; then
         remove_pkg "starship"
         success "Starship removed via ${PKG_MANAGER}."
     fi
 
-    # اگه با curl نصب شده بود باینری مستقیم حذف می‌شه
     sudo rm -f /usr/local/bin/starship
     success "Starship binary removed."
 
-    # پاک‌کردن از هر دو shell rc
     for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
         if [ -f "$rc" ]; then
             sed -i '/starship init/d' "$rc"
@@ -216,10 +209,10 @@ remove_starship() {
     success "starship.toml removed."
 }
 
-# ─── Step 5: Darky fastfetch configs ──────────
+# ─── Step 4: Darky fastfetch configs ──────────
 remove_darky_configs() {
     echo ""
-    echo -e "${BOLD}━━━ Step 5: Darky Config Files ━━━${RESET}"
+    echo -e "${BOLD}━━━ Step 4: Darky Config Files ━━━${RESET}"
 
     local has_files=0
     for f in "$HOME/.config/fastfetch/config.jsonc" \
@@ -252,10 +245,10 @@ remove_darky_configs() {
     success "Fastfetch startup line removed from shell rc files."
 }
 
-# ─── Step 6: Restore original shell ───────────
+# ─── Step 5: Restore original shell ───────────
 remove_shell() {
     echo ""
-    echo -e "${BOLD}━━━ Step 6: Restore Original Shell ━━━${RESET}"
+    echo -e "${BOLD}━━━ Step 5: Restore Original Shell ━━━${RESET}"
 
     local backup_file="$HOME/.config/darky-backup/old-shell"
 
