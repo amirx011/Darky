@@ -1,0 +1,126 @@
+# ─────────────────────────────────────────────────────
+# STARSHIP PROMPT — Darky Configuration
+# ***File: ~/.config/starship.toml***
+# ─────────────────────────────────────────────────────
+# ***Install: curl -sS https://starship.rs/install.sh | sh***
+# ***Enable:  echo 'eval "$(starship init zsh)"' >> ~/.zshrc***
+# ─────────────────────────────────────────────────────
+
+"$schema" = 'https://starship.rs/config-schema.json'
+scan_timeout = 15
+
+format = """
+$directory\
+$git_branch\
+$git_status\
+$python\
+$rust\
+$golang\
+$nodejs\
+$fill\
+$cmd_duration\
+$time\
+$line_break\
+$character"""
+
+add_newline = true
+
+palette = "darky"
+
+[palettes.darky]
+primary    = "#A8C7FA"
+secondary  = "#C5DAFF"
+highlight  = "#D7E7FF"
+text       = "#F3F7FD"
+muted      = "#D8E3F3"
+bg         = "#151C24"
+accent_red = "#F08282"
+accent_grn = "#8CD2A0"
+accent_yel = "#E6C88C"
+dim        = "#6B7FA0"
+
+[character]
+success_symbol = "[❯](bold #A8C7FA)"
+error_symbol   = "[❯](bold #F08282)"
+vimcmd_symbol  = "[❮](bold #C5DAFF)"
+
+[directory]
+style                     = "bold #C5DAFF"
+truncation_length         = 3
+truncate_to_repo          = true
+read_only                 = " ro"
+read_only_style           = "#F08282"
+before_repo_root_style    = "#6B7FA0"
+repo_root_style           = "bold #D7E7FF"
+format                    = "[$path]($style)[$read_only]($read_only_style) "
+
+[git_branch]
+symbol    = ""
+style     = "#6B7FA0"
+format    = "[$symbol$branch]($style) "
+
+[git_status]
+style     = "#F08282"
+format    = "([$all_status$ahead_behind]($style) )"
+ahead     = "⇡${count}"
+behind    = "⇣${count}"
+diverged  = "⇕⇡${ahead_count}⇣${behind_count}"
+modified  = "~${count}"
+staged    = "+${count}"
+untracked = "?${count}"
+deleted   = "-${count}"
+
+[fill]
+symbol = " "
+
+[cmd_duration]
+min_time          = 2000
+style             = "#6B7FA0"
+format            = "[$duration]($style) "
+show_milliseconds = false
+
+[time]
+disabled      = false
+style         = "#6B7FA0"
+format        = "[$time]($style)"
+time_format   = "%H:%M"
+use_12hr      = false
+
+[python]
+symbol = "py "
+style  = "#8CD2A0"
+format = "[$symbol($version)]($style) "
+
+[rust]
+symbol = "rs "
+style  = "#E6C88C"
+format = "[$symbol($version)]($style) "
+
+[golang]
+symbol = "go "
+style  = "#8CD2A0"
+format = "[$symbol($version)]($style) "
+
+[nodejs]
+symbol = "js "
+style  = "#E6C88C"
+format = "[$symbol($version)]($style) "
+
+# ─────────────────────────────────────────────────────
+# ZSH CONFIGURATION — Darky
+# Append to: ~/.zshrc
+# ─────────────────────────────────────────────────────
+
+# --- Aliases ---
+# alias ls='ls --color=auto --group-directories-first'
+# alias ll='ls -lh'
+# alias la='ls -lAh'
+# alias grep='grep --color=auto'
+# alias diff='diff --color=auto'
+
+# --- Plugins (install via DNF or manually) ---
+# source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+# source /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+
+# --- Startup ---
+# fastfetch --config ~/.config/fastfetch/config.jsonc
