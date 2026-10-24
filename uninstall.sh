@@ -134,30 +134,76 @@ remove_rounded_corners() {
     done
 }
 
-# ─── Step 2: Konsole theme ────────────────────
-remove_konsole() {
+# ─── Step 2: Terminal theme (all terminals) ────
+remove_terminal_theme() {
     echo ""
-    echo -e "${BOLD}━━━ Step 2: Konsole Theme ━━━${RESET}"
+    echo -e "${BOLD}━━━ Step 2: Terminal Theme ━━━${RESET}"
 
     local konsole_dir="$HOME/.local/share/konsole"
     local konsolerc="$HOME/.config/konsolerc"
+    local found=0
 
-    if [[ ! -f "$konsole_dir/DarkySlate.colorscheme" &&
-          ! -f "$konsole_dir/Darky.profile" ]]; then
-        info "Darky Konsole theme not found. Skipping."
-        return
+    # Detect what the installer actually wrote
+    [ -f "$konsole_dir/DarkySlate.colorscheme" ] && found=1
+    [ -f "$konsole_dir/Darky.profile" ]           && found=1
+    [ -f "$HOME/.config/kitty/darky.conf" ]       && found=1
+    [ -f "$HOME/.config/alacritty/darky.toml" ]   && found=1
+    [ -f "$HOME/.config/wezterm/darky.lua" ]      && found=1
+    [ -f "$HOME/.config/foot/darky.ini" ]         && found=1
+    grep -qF "Darky theme" "$HOME/.Xresources" 2>/dev/null && found=1
+
+    if [ "$found" -eq 0 ]; then
+        info "No Darky terminal theme found. Skipping."
+        return 0
     fi
 
-    if ! ask "  Remove Darky Konsole theme?"; then
-        warn "Skipped Konsole theme removal."
-        return
+    if ! ask "  Remove Darky terminal theme?"; then
+        warn "Skipped terminal theme removal."
+        return 0
     fi
 
-    rm -f "$konsole_dir/DarkySlate.colorscheme" \
-          "$konsole_dir/Darky.profile"
-    success "Konsole theme files removed."
+    # Konsole
+    if [ -f "$konsole_dir/DarkySlate.colorscheme" ] || [ -f "$konsole_dir/Darky.profile" ]; then
+        rm -f "$konsole_dir/DarkySlate.colorscheme" "$konsole_dir/Darky.profile"
+        success "Konsole: theme files removed."
+    fi
 
-    # ریست پروفایل پیش‌فرض
+    # Kitty
+    if [ -f "$HOME/.config/kitty/darky.conf" ]; then
+        rm -f "$HOME/.config/kitty/darky.conf"
+        sed -i '/include darky.conf/d' "$HOME/.config/kitty/kitty.conf" 2>/dev/null || true
+        success "Kitty: theme removed."
+    fi
+
+    # Alacritty
+    if [ -f "$HOME/.config/alacritty/darky.toml" ]; then
+        rm -f "$HOME/.config/alacritty/darky.toml"
+        sed -i '/darky.toml/d' "$HOME/.config/alacritty/alacritty.toml" 2>/dev/null || true
+        success "Alacritty: theme removed."
+    fi
+
+    # WezTerm
+    if [ -f "$HOME/.config/wezterm/darky.lua" ]; then
+        rm -f "$HOME/.config/wezterm/darky.lua"
+        sed -i "/require('darky')/d" "$HOME/.config/wezterm/wezterm.lua" 2>/dev/null || true
+        success "WezTerm: theme removed."
+    fi
+
+    # Foot
+    if [ -f "$HOME/.config/foot/darky.ini" ]; then
+        rm -f "$HOME/.config/foot/darky.ini"
+        sed -i '/darky.ini/d' "$HOME/.config/foot/foot.ini" 2>/dev/null || true
+        success "Foot: theme removed."
+    fi
+
+    # Xterm
+    if grep -qF "Darky theme" "$HOME/.Xresources" 2>/dev/null; then
+        sed -i '/Darky theme/,+5d' "$HOME/.Xresources"
+        command -v xrdb &>/dev/null && xrdb -merge "$HOME/.Xresources" 2>/dev/null || true
+        success "Xterm: theme removed from ~/.Xresources."
+    fi
+
+    # Reset Konsole default profile
     if [ -f "$konsolerc" ]; then
         if command -v kwriteconfig6 &>/dev/null; then
             kwriteconfig6 --file "$konsolerc" \
@@ -170,8 +216,37 @@ remove_konsole() {
         else
             sed -i '/^DefaultProfile=Darky/d' "$konsolerc"
         fi
-        success "Default Konsole profile reset."
+        success "Default terminal profile reset."
     fi
+
+    # Fish: remove the lines the installer appended
+    local fish_rc="$HOME/.config/fish/config.fish"
+    if [ -f "$fish_rc" ]; then
+        sed -i '/starship init fish/d' "$fish_rc" 2>/dev/null || true
+        sed -i '/config-startup.jsonc/d' "$fish_rc" 2>/dev/null || true
+        success "Fish: Darky lines removed from config.fish."
+    fi
+}
+
+# ─── Hyprland config ──────────────────────────
+remove_hyprland_config() {
+    local conf="$HOME/.config/hypr/darky.conf"
+    local main="$HOME/.config/hypr/hyprland.conf"
+
+    if [ ! -f "$conf" ]; then
+        return 0
+    fi
+
+    echo ""
+    echo -e "${BOLD}━━━ Hyprland config ━━━${RESET}"
+    if ! ask "  Remove Darky Hyprland config?"; then
+        warn "Skipped Hyprland config removal."
+        return 0
+    fi
+
+    rm -f "$conf"
+    sed -i '/darky.conf/d' "$main" 2>/dev/null || true
+    success "Hyprland: darky.conf removed."
 }
 
 # ─── Step 3: Starship ─────────────────────────
@@ -308,10 +383,11 @@ main() {
     detect_distro
 
     remove_rounded_corners   # Step 1
-    remove_konsole           # Step 2
+    remove_terminal_theme    # Step 2 — all terminals
     remove_starship          # Step 3
     remove_darky_configs     # Step 4
     remove_shell             # Step 5
+    remove_hyprland_config   # Step 6 — Hyprland (if present)
 
     rm -rf "$HOME/.config/darky-backup" 2>/dev/null || true
 

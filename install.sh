@@ -134,6 +134,40 @@ clone_repo() {
     success "Repository cloned."
 }
 
+# ─── Detect desktop environment / compositor ──
+detect_desktop() {
+    if [[ -n "$HYPRLAND_INSTANCE_SIGNATURE" ]] || command -v Hyprland &>/dev/null; then
+        DESKTOP="hyprland"
+    elif [[ "$XDG_CURRENT_DESKTOP" == *"KDE"* || "$XDG_CURRENT_DESKTOP" == *"Plasma"* ]]; then
+        DESKTOP="kde"
+    elif [[ -n "$XDG_CURRENT_DESKTOP" ]]; then
+        DESKTOP="${XDG_CURRENT_DESKTOP,,}"
+    else
+        DESKTOP="unknown"
+    fi
+    export DESKTOP
+    info "Detected desktop: ${DESKTOP}"
+}
+
+# ─── Detect every terminal emulator present ───
+# Fills the TERMINALS array with ids of installed terminals.
+detect_terminals() {
+    TERMINALS=()
+    local t
+    for t in konsole kitty alacritty wezterm foot ghostty xterm; do
+        if command -v "$t" &>/dev/null; then
+            TERMINALS+=("$t")
+        fi
+    done
+    # Flatpak / snap fallbacks
+    if [ ${#TERMINALS[@]} -eq 0 ]; then
+        if command -v flatpak &>/dev/null && flatpak list 2>/dev/null | grep -qi "konsole"; then
+            TERMINALS+=("konsole")
+        fi
+    fi
+    export TERMINALS
+}
+
 # ─── Helper: detect kwriteconfig ──────────────
 detect_kwrite() {
     if command -v kwriteconfig6 &>/dev/null; then
@@ -153,14 +187,16 @@ install_shell() {
     echo -e "  ${BOLD}Which shell do you want to use?${RESET}"
     echo -e "  ${CYAN}1)${RESET} Zsh  (recommended)"
     echo -e "  ${CYAN}2)${RESET} Bash"
+    echo -e "  ${CYAN}3)${RESET} Fish"
     echo ""
 
     while true; do
-        read -rp "$(echo -e "${BOLD}  Enter choice [1/2]: ${RESET}")" shell_choice
+        read -rp "$(echo -e "${BOLD}  Enter choice [1/2/3]: ${RESET}")" shell_choice
         case "$shell_choice" in
             1) CHOSEN_SHELL="zsh";  break ;;
             2) CHOSEN_SHELL="bash"; break ;;
-            *) echo "  Please enter 1 or 2." ;;
+            3) CHOSEN_SHELL="fish"; break ;;
+            *) echo "  Please enter 1, 2 or 3." ;;
         esac
     done
 
@@ -190,6 +226,27 @@ install_shell() {
 
         [ -f "$HOME/.zshrc" ] || touch "$HOME/.zshrc"
         SHELL_RC="$HOME/.zshrc"
+
+    elif [[ "$CHOSEN_SHELL" == "fish" ]]; then
+        if ! command -v fish &>/dev/null; then
+            info "fish is not installed. Installing..."
+            install_pkg_silent "fish"
+        else
+            success "fish is already installed."
+        fi
+
+        FISH_PATH="$(command -v fish)"
+        if [[ "$SHELL" == *"fish"* ]]; then
+            success "fish is already your default shell."
+        else
+            grep -qF "$FISH_PATH" /etc/shells || echo "$FISH_PATH" | sudo tee -a /etc/shells > /dev/null
+            sudo chsh -s "$FISH_PATH" "$USER"
+            success "Default shell changed to fish. Takes effect on next login."
+        fi
+
+        mkdir -p "$HOME/.config/fish"
+        [ -f "$HOME/.config/fish/config.fish" ] || touch "$HOME/.config/fish/config.fish"
+        SHELL_RC="$HOME/.config/fish/config.fish"
 
     else
         if ! command -v bash &>/dev/null; then
@@ -299,11 +356,24 @@ install_font() {
 # ─── Step 2: KDE Rounded Corners ──────────────
 install_rounded_corners() {
     echo ""
-    echo -e "${BOLD}━━━ Step 2: KDE Rounded Corners ━━━${RESET}"
+    echo -e "${BOLD}━━━ Step 2: Rounded Corners ━━━${RESET}"
+
+    # On Hyprland rounding is built in — handled by apply_hyprland_config.
+    if [[ "$DESKTOP" == "hyprland" ]]; then
+        info "Hyprland detected: rounding is built in (decoration.rounding = 10)."
+        info "It will be written to ~/.config/hypr/darky.conf at the end."
+        return 0
+    fi
+
+    if [[ "$DESKTOP" != "kde" ]]; then
+        warn "Rounded corners are only configured for KDE and Hyprland. Skipping."
+        return 0
+    fi
 
     if [[ "$PKG_MANAGER" != "dnf" ]]; then
         warn "KDE Rounded Corners via COPR is only supported on Fedora/RHEL. Skipping."
-        return
+        warn "On Arch, use the AUR package: kwin-effect-rounded-corners-git"
+        return 0
     fi
 
     if ! ask "  Enable rounded window corners? (Squircleness=0.60)"; then
@@ -340,20 +410,272 @@ install_rounded_corners() {
     fi
 }
 
-# ─── Step 3: Konsole theme ────────────────────
-install_konsole() {
-    echo ""
-    echo -e "${BOLD}━━━ Step 3: Konsole Theme ━━━${RESET}"
+# ─── Step 3: Terminal theme (any terminal) ────
+# Writes the Darky palette into whatever terminal is installed.
+# Palette values (must stay in sync with DarkySlate.colorscheme):
+#   bg #1e2229  fg #c8d0e0  accent #5f87af
+DARKY_BG="1e2229"
+DARKY_FG="c8d0e0"
+DARKY_CURSOR="5f87af"
+DARKY_PALETTE=(
+    "1e2229" "e06c75" "98c379" "e5c07b"
+    "61afef" "c678dd" "56b6c2" "c8d0e0"
+    "3b4048" "e06c75" "98c379" "e5c07b"
+    "61afef" "c678dd" "56b6c2" "ffffff"
+)
 
-    if ask "  Install Konsole theme?"; then
-        mkdir -p ~/.local/share/konsole
-        cp "$TMP_DIR/DarkySlate.colorscheme" ~/.local/share/konsole/
-        cp "$TMP_DIR/Darky.profile"          ~/.local/share/konsole/
-        success "Konsole files copied."
-        info "To activate: Konsole → Settings → Manage Profiles → Darky"
+# Konsole: profile + colorscheme files
+theme_konsole() {
+    mkdir -p "$HOME/.local/share/konsole"
+    cp "$TMP_DIR/DarkySlate.colorscheme" "$HOME/.local/share/konsole/"
+    cp "$TMP_DIR/Darky.profile"          "$HOME/.local/share/konsole/"
+    success "Konsole: theme files copied."
+}
+
+# Kitty: one .conf with colors + font
+theme_kitty() {
+    local dir="$HOME/.config/kitty"
+    local file="$dir/darky.conf"
+    mkdir -p "$dir"
+
+    {
+        echo "# Darky theme — generated by Darky installer"
+        echo "background            #${DARKY_BG}"
+        echo "foreground            #${DARKY_FG}"
+        echo "cursor                #${DARKY_CURSOR}"
+        echo "selection_background  #3b4048"
+        echo "selection_foreground  #${DARKY_FG}"
+        local i
+        for i in "${!DARKY_PALETTE[@]}"; do
+            echo "color${i}              #${DARKY_PALETTE[$i]}"
+        done
+        echo "font_family           JetBrains Mono"
+        echo "font_size             11.0"
+    } > "$file"
+
+    # Make sure the theme is actually loaded
+    if [ -f "$dir/kitty.conf" ]; then
+        if ! grep -qF "darky.conf" "$dir/kitty.conf"; then
+            echo "include darky.conf" >> "$dir/kitty.conf"
+            success "Kitty: theme written and included in kitty.conf."
+        else
+            success "Kitty: theme updated (already included)."
+        fi
     else
-        warn "Skipped Konsole theme."
+        echo "include darky.conf" > "$dir/kitty.conf"
+        success "Kitty: theme written and kitty.conf created."
     fi
+}
+
+# Alacritty: TOML colors + font
+theme_alacritty() {
+    local dir="$HOME/.config/alacritty"
+    local file="$dir/darky.toml"
+    mkdir -p "$dir"
+
+    {
+        echo "# Darky theme — generated by Darky installer"
+        echo "[colors.primary]"
+        echo "background = '#${DARKY_BG}'"
+        echo "foreground = '#${DARKY_FG}'"
+        echo ""
+        echo "[colors.cursor]"
+        echo "text   = '#${DARKY_BG}'"
+        echo "cursor = '#${DARKY_CURSOR}'"
+        echo ""
+        echo "[colors.normal]"
+        echo "black   = '#${DARKY_PALETTE[0]}'"
+        echo "red     = '#${DARKY_PALETTE[1]}'"
+        echo "green   = '#${DARKY_PALETTE[2]}'"
+        echo "yellow  = '#${DARKY_PALETTE[3]}'"
+        echo "blue    = '#${DARKY_PALETTE[4]}'"
+        echo "magenta = '#${DARKY_PALETTE[5]}'"
+        echo "cyan    = '#${DARKY_PALETTE[6]}'"
+        echo "white   = '#${DARKY_PALETTE[7]}'"
+        echo ""
+        echo "[colors.bright]"
+        echo "black   = '#${DARKY_PALETTE[8]}'"
+        echo "red     = '#${DARKY_PALETTE[9]}'"
+        echo "green   = '#${DARKY_PALETTE[10]}'"
+        echo "yellow  = '#${DARKY_PALETTE[11]}'"
+        echo "blue    = '#${DARKY_PALETTE[12]}'"
+        echo "magenta = '#${DARKY_PALETTE[13]}'"
+        echo "cyan    = '#${DARKY_PALETTE[14]}'"
+        echo "white   = '#${DARKY_PALETTE[15]}'"
+        echo ""
+        echo "[font]"
+        echo "size = 11.0"
+        echo "normal = { family = 'JetBrains Mono' }"
+    } > "$file"
+
+    if [ -f "$dir/alacritty.toml" ]; then
+        if ! grep -qF "darky.toml" "$dir/alacritty.toml"; then
+            echo "import = [\"~/.config/alacritty/darky.toml\"]" >> "$dir/alacritty.toml"
+            success "Alacritty: theme written and imported in alacritty.toml."
+        else
+            success "Alacritty: theme updated (already imported)."
+        fi
+    else
+        printf 'import = ["~/.config/alacritty/darky.toml"]\n' > "$dir/alacritty.toml"
+        success "Alacritty: theme written and alacritty.toml created."
+    fi
+}
+
+# WezTerm: Lua colors + font
+theme_wezterm() {
+    local dir="$HOME/.config/wezterm"
+    mkdir -p "$dir"
+    {
+        echo "-- Darky theme — generated by Darky installer"
+        echo "return {"
+        echo "  colors = {"
+        echo "    background = '#${DARKY_BG}',"
+        echo "    foreground = '#${DARKY_FG}',"
+        echo "    cursor_bg = '#${DARKY_CURSOR}',"
+        echo "    ansi = {"
+        printf "      '%s',\n" "#${DARKY_PALETTE[0]}" "#${DARKY_PALETTE[1]}" \
+            "#${DARKY_PALETTE[2]}" "#${DARKY_PALETTE[3]}" "#${DARKY_PALETTE[4]}" \
+            "#${DARKY_PALETTE[5]}" "#${DARKY_PALETTE[6]}" "#${DARKY_PALETTE[7]}"
+        echo "    },"
+        echo "    brights = {"
+        printf "      '%s',\n" "#${DARKY_PALETTE[8]}" "#${DARKY_PALETTE[9]}" \
+            "#${DARKY_PALETTE[10]}" "#${DARKY_PALETTE[11]}" "#${DARKY_PALETTE[12]}" \
+            "#${DARKY_PALETTE[13]}" "#${DARKY_PALETTE[14]}" "#${DARKY_PALETTE[15]}"
+        echo "    },"
+        echo "  },"
+        echo "  font = wezterm.font('JetBrains Mono'),"
+        echo "  font_size = 11.0,"
+        echo "}"
+    } > "$dir/darky.lua"
+
+    if [ -f "$dir/wezterm.lua" ]; then
+        if ! grep -qF "darky.lua" "$dir/wezterm.lua"; then
+            echo "-- Darky theme" >> "$dir/wezterm.lua"
+            echo "require('darky')" >> "$dir/wezterm.lua"
+            success "WezTerm: theme written and required from wezterm.lua."
+        else
+            success "WezTerm: theme updated (already required)."
+        fi
+    else
+        printf "local wezterm = require('wezterm')\nreturn require('darky')\n" > "$dir/wezterm.lua"
+        success "WezTerm: theme written and wezterm.lua created."
+    fi
+}
+
+# Foot: INI-style colors
+theme_foot() {
+    local dir="$HOME/.config/foot"
+    mkdir -p "$dir"
+    {
+        echo "# Darky theme — generated by Darky installer"
+        echo "[colors]"
+        echo "background=${DARKY_BG}"
+        echo "foreground=${DARKY_FG}"
+        local i
+        for i in "${!DARKY_PALETTE[@]}"; do
+            echo "regular${i}=${DARKY_PALETTE[$i]}"
+        done
+        echo "[main]"
+        echo "font=JetBrains Mono:size=11"
+    } > "$dir/darky.ini"
+
+    if [ -f "$dir/foot.ini" ]; then
+        if ! grep -qF "darky.ini" "$dir/foot.ini"; then
+            echo "include=~/.config/foot/darky.ini" >> "$dir/foot.ini"
+            success "Foot: theme written and included in foot.ini."
+        else
+            success "Foot: theme updated (already included)."
+        fi
+    else
+        echo "include=~/.config/foot/darky.ini" > "$dir/foot.ini"
+        success "Foot: theme written and foot.ini created."
+    fi
+}
+
+# Xterm: Xresources
+theme_xterm() {
+    local file="$HOME/.Xresources"
+    if grep -qF "Darky theme" "$file" 2>/dev/null; then
+        success "Xterm: Darky colors already present in ~/.Xresources."
+        return
+    fi
+    {
+        echo "! Darky theme — generated by Darky installer"
+        echo "XTerm*background: #${DARKY_BG}"
+        echo "XTerm*foreground: #${DARKY_FG}"
+        echo "XTerm*cursorColor: #${DARKY_CURSOR}"
+        echo "XTerm*faceName: JetBrains Mono"
+        echo "XTerm*faceSize: 11"
+    } >> "$file"
+    command -v xrdb &>/dev/null && xrdb -merge "$file" 2>/dev/null || true
+    success "Xterm: theme appended to ~/.Xresources."
+}
+
+# Fish shell: prompt/theme integration
+setup_fish() {
+    command -v fish &>/dev/null || return 0
+    local dir="$HOME/.config/fish"
+    mkdir -p "$dir"
+
+    # Make fish the login shell if the user picked it
+    if [[ "$CHOSEN_SHELL" == "fish" ]]; then
+        local fish_path
+        fish_path="$(command -v fish)"
+        grep -qF "$fish_path" /etc/shells || echo "$fish_path" | sudo tee -a /etc/shells > /dev/null
+        if [[ "$SHELL" != *"fish"* ]]; then
+            sudo chsh -s "$fish_path" "$USER" && success "Default shell changed to fish."
+        fi
+    fi
+
+    # Fish needs starship init in config.fish (not .bashrc/.zshrc)
+    if command -v starship &>/dev/null; then
+        if ! grep -qF "starship init fish" "$dir/config.fish" 2>/dev/null; then
+            echo 'starship init fish | source' >> "$dir/config.fish"
+            success "Fish: starship init added to config.fish."
+        fi
+    fi
+
+    # Fish needs fastfetch startup in config.fish too
+    if [ -f "$HOME/.config/fastfetch/config-startup.jsonc" ]; then
+        if ! grep -qF "config-startup.jsonc" "$dir/config.fish" 2>/dev/null; then
+            echo 'fastfetch --config ~/.config/fastfetch/config-startup.jsonc' >> "$dir/config.fish"
+            success "Fish: fastfetch startup added to config.fish."
+        fi
+    fi
+}
+
+install_terminal_theme() {
+    echo ""
+    echo -e "${BOLD}━━━ Step 3: Terminal Theme ━━━${RESET}"
+
+    detect_terminals
+    if [ ${#TERMINALS[@]} -eq 0 ]; then
+        warn "No supported terminal found (konsole/kitty/alacritty/wezterm/foot/xterm)."
+        warn "Skipping terminal theme."
+        return
+    fi
+
+    info "Terminals found: ${TERMINALS[*]}"
+    if ! ask "  Apply the Darky theme to all of them?"; then
+        warn "Skipped terminal theme."
+        return
+    fi
+
+    local t
+    for t in "${TERMINALS[@]}"; do
+        case "$t" in
+            konsole)   theme_konsole ;;
+            kitty)     theme_kitty ;;
+            alacritty) theme_alacritty ;;
+            wezterm)   theme_wezterm ;;
+            foot)      theme_foot ;;
+            xterm)     theme_xterm ;;
+            *)         warn "No theme writer for '${t}'. Skipping." ;;
+        esac
+    done
+
+    setup_fish
+    success "Terminal theming done."
 }
 
 # ─── Step 4: Fastfetch ────────────────────────
@@ -403,7 +725,11 @@ install_fastfetch() {
         success "fastfetch configs copied."
 
         STARTUP_LINE="fastfetch --config $HOME/.config/fastfetch/config-startup.jsonc"
-        if grep -qF "config-startup.jsonc" "$SHELL_RC" 2>/dev/null; then
+
+        # Fish gets its startup line from setup_fish() in a fish-compatible file
+        if [[ "$CHOSEN_SHELL" == "fish" ]]; then
+            info "Fish shell: startup line will be added to ~/.config/fish/config.fish."
+        elif grep -qF "config-startup.jsonc" "$SHELL_RC" 2>/dev/null; then
             success "Fastfetch startup already present in $SHELL_RC."
         else
             echo "$STARTUP_LINE" >> "$SHELL_RC"
@@ -474,6 +800,12 @@ install_starship() {
         warn "Skipped starship.toml."
     fi
 
+    if [[ "$CHOSEN_SHELL" == "fish" ]]; then
+        # Fish syntax differs and lives in config.fish — setup_fish() handles it
+        info "Fish shell: starship init will be added to ~/.config/fish/config.fish."
+        return 0
+    fi
+
     if [[ "$CHOSEN_SHELL" == "zsh" ]]; then
         INIT_LINE='eval "$(starship init zsh)"'
     else
@@ -500,9 +832,20 @@ cleanup() {
     rm -rf "$TMP_DIR"
 }
 
-# ─── Auto-apply: set Darky as default Konsole profile ─────
+# ─── Auto-apply: set Darky as default terminal profile ─────
 
 apply_konsole_profile() {
+    # Konsole config only exists on KDE. On Hyprland / other WMs Konsole
+    # either isn't installed or isn't configured through konsolerc.
+    if [[ "$DESKTOP" != "kde" ]]; then
+        info "Not a KDE session. Skipping Konsole default-profile setup."
+        return 0
+    fi
+    if ! command -v konsole &>/dev/null; then
+        info "Konsole is not installed. Skipping default-profile setup."
+        return 0
+    fi
+
     local profile_name="Darky"
     local konsolerc="$HOME/.config/konsolerc"
 
@@ -510,7 +853,7 @@ apply_konsole_profile() {
     if [ -n "$KWRITE" ]; then
         $KWRITE --file "$konsolerc" \
             --group "Desktop Entry" \
-            --key "DefaultProfile" "${profile_name}.profile"
+            --key "DefaultProfile" "${profile_name}.profile" 2>/dev/null || true
         success "Darky set as default Konsole profile."
     else
         mkdir -p "$(dirname "$konsolerc")"
@@ -529,6 +872,43 @@ apply_konsole_profile() {
     fi
 }
 
+# ─── Hyprland: font + terminal + gaps tweaks ───
+apply_hyprland_config() {
+    local conf_dir="$HOME/.config/hypr"
+    local conf="$conf_dir/darky.conf"
+
+    if [[ "$DESKTOP" != "hyprland" ]]; then
+        return 0
+    fi
+
+    mkdir -p "$conf_dir"
+    {
+        echo "# Darky — generated by Darky installer"
+        echo "# Terminal + font + rounded-corner look for Hyprland"
+        echo "\$terminal = ${TERMINALS[0]:-kitty}"
+        echo "exec-once = ${TERMINALS[0]:-kitty}"
+        echo ""
+        echo "# Slightly rounded windows (Hyprland equivalent of KDE rounded corners)"
+        echo "decoration {"
+        echo "    rounding = 10"
+        echo "}"
+    } > "$conf"
+
+    # Make sure hyprland.conf actually sources it
+    local main="$conf_dir/hyprland.conf"
+    if [ -f "$main" ]; then
+        if ! grep -qF "darky.conf" "$main"; then
+            printf '\nsource = ~/.config/hypr/darky.conf\n' >> "$main"
+            success "Hyprland: darky.conf created and sourced from hyprland.conf."
+        else
+            success "Hyprland: darky.conf updated (already sourced)."
+        fi
+    else
+        warn "~/.config/hypr/hyprland.conf not found. Add manually:"
+        warn "  source = ~/.config/hypr/darky.conf"
+    fi
+}
+
 # ─── Auto-apply: source shell rc ──────────────
 apply_shell_rc() {
     if [ -f "$SHELL_RC" ]; then
@@ -538,23 +918,46 @@ apply_shell_rc() {
     fi
 }
 
-# ─── Relaunch Konsole with Darky profile ──────
+# ─── Relaunch terminal with Darky profile ──────
 
-relaunch_konsole() {
-    if command -v konsole &>/dev/null; then
-        info "Relaunching Konsole with Darky profile..."
-        nohup konsole --profile "Darky" &>/dev/null &
-        disown
-        success "New Konsole window opened with Darky profile."
+relaunch_terminal() {
+    local term="${TERMINALS[0]:-}"
+    if [ -z "$term" ]; then
+        warn "No terminal found. Please restart your terminal manually."
+        return 0
+    fi
 
-        
-        PARENT_NAME="$(ps -o comm= -p $PPID 2>/dev/null || true)"
-        if [[ "$PARENT_NAME" == "konsole" ]]; then
-            sleep 1
-            kill -TERM $PPID 2>/dev/null || true
-        fi
-    else
-        warn "Konsole not found. Please restart your terminal manually."
+    info "Relaunching ${term} with Darky theme..."
+    case "$term" in
+        konsole)
+            nohup konsole --profile "Darky" &>/dev/null &
+            ;;
+        kitty)
+            nohup kitty &>/dev/null &
+            ;;
+        alacritty)
+            nohup alacritty &>/dev/null &
+            ;;
+        wezterm)
+            nohup wezterm &>/dev/null &
+            ;;
+        foot)
+            nohup foot &>/dev/null &
+            ;;
+        *)
+            warn "Don't know how to relaunch '${term}'. Restart it manually."
+            return 0
+            ;;
+    esac
+    disown 2>/dev/null || true
+    success "New terminal window opened with Darky theme."
+
+    # Close the old window only if we were launched from that same terminal
+    local parent_name
+    parent_name="$(ps -o comm= -p $PPID 2>/dev/null || true)"
+    if [[ "$parent_name" == "$term" ]]; then
+        sleep 1
+        kill -TERM $PPID 2>/dev/null || true
     fi
 }
 
@@ -567,15 +970,16 @@ main() {
     echo ""
 
     detect_distro
+    detect_desktop
     check_git
     clone_repo
 
-    install_shell           # Step 0
-    install_font            # Step 1
-    install_rounded_corners # Step 2 — KDE Rounded Corners
-    install_konsole         # Step 3
-    install_fastfetch       # Step 4
-    install_starship        # Step 5
+    install_shell              # Step 0
+    install_font               # Step 1
+    install_rounded_corners    # Step 2 — KDE Rounded Corners (KDE only)
+    install_terminal_theme     # Step 3 — any terminal
+    install_fastfetch          # Step 4
+    install_starship           # Step 5
 
     cleanup
 
@@ -584,12 +988,14 @@ main() {
     echo ""
 
     apply_konsole_profile
+    apply_hyprland_config
     apply_shell_rc
+    setup_fish   # after starship/fastfetch, so it can wire them into config.fish
 
     echo ""
-    info "Relaunching terminal with Darky profile in 3 seconds..."
+    info "Relaunching terminal with Darky theme in 3 seconds..."
     sleep 3
-    relaunch_konsole
+    relaunch_terminal
 }
 
 main "$@"
