@@ -381,19 +381,35 @@ install_rounded_corners() {
         return
     fi
 
+    # Every command below is guarded: a COPR/network/repo failure must never
+    # abort the whole installer (works even with `set -e`).
     info "Enabling COPR: matinlotfali/KDE-Rounded-Corners..."
-    sudo dnf install -y dnf-plugins-core
-    sudo dnf copr enable -y matinlotfali/KDE-Rounded-Corners
-    sudo dnf install -y kwin-effect-roundcorners
+
+    if ! sudo dnf install -y dnf-plugins-core; then
+        warn "'dnf-plugins-core' could not be installed — COPR support may be missing."
+    fi
+
+    if ! sudo dnf copr enable -y matinlotfali/KDE-Rounded-Corners; then
+        warn "Could not enable the COPR repository (offline, COPR down or unsupported)."
+        warn "Skipping KDE Rounded Corners and continuing the installation."
+        return 0
+    fi
+
+    if ! sudo dnf install -y kwin-effect-roundcorners; then
+        warn "Could not install 'kwin-effect-roundcorners' from the COPR repo."
+        warn "Skipping KDE Rounded Corners and continuing the installation."
+        return 0
+    fi
+
     success "kwin-effect-roundcorners installed."
- 
+
     detect_kwrite
     if [ -z "$KWRITE" ]; then
         warn "kwriteconfig not found. Skipping KWin config. Set Squircleness manually."
     else
-        $KWRITE --file kwinrc --group Plugins --key roundcornersEnabled "true"
-        $KWRITE --file kwinrc --group Effect-RoundedCorners --key Squircleness "0.60"
-        $KWRITE --file breezerc --group "Windeco Exception 0" --key OutlineIntensity "OutlineOff"
+        $KWRITE --file kwinrc --group Plugins --key roundcornersEnabled "true" || true
+        $KWRITE --file kwinrc --group Effect-RoundedCorners --key Squircleness "0.60" || true
+        $KWRITE --file breezerc --group "Windeco Exception 0" --key OutlineIntensity "OutlineOff" || true
         success "Squircleness set to 0.60."
     fi
 
