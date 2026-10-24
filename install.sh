@@ -617,16 +617,6 @@ setup_fish() {
     local dir="$HOME/.config/fish"
     mkdir -p "$dir"
 
-    # Make fish the login shell if the user picked it
-    if [[ "$CHOSEN_SHELL" == "fish" ]]; then
-        local fish_path
-        fish_path="$(command -v fish)"
-        grep -qF "$fish_path" /etc/shells || echo "$fish_path" | sudo tee -a /etc/shells > /dev/null
-        if [[ "$SHELL" != *"fish"* ]]; then
-            sudo chsh -s "$fish_path" "$USER" && success "Default shell changed to fish."
-        fi
-    fi
-
     # Fish needs starship init in config.fish (not .bashrc/.zshrc)
     if command -v starship &>/dev/null; then
         if ! grep -qF "starship init fish" "$dir/config.fish" 2>/dev/null; then
@@ -932,6 +922,12 @@ apply_shell_default() {
         return 0
     fi
 
+    # Detect the previous shell FIRST — before we touch terminal.sh, otherwise
+    # the launcher would already report the new shell and migration would be
+    # skipped as "nothing to move".
+    local prev_shell
+    prev_shell="$(current_shell_name)"
+
     # 1) Register in /etc/shells and set as login shell
     grep -qF "$shell_path" /etc/shells 2>/dev/null \
         || echo "$shell_path" | sudo tee -a /etc/shells > /dev/null
@@ -949,19 +945,24 @@ apply_shell_default() {
     # 2) ml4w / Hyprland: make the terminal launcher use the chosen shell
     local ml4w_term="$HOME/.config/ml4w/settings/terminal.sh"
     if [ -f "$ml4w_term" ]; then
-        local current
-        current="$(head -n1 "$ml4w_term" | tr -d '[:space:]')"
+        # Strip any shell we (or a previous run) appended, so re-running the
+        # installer can switch shells again instead of bailing out.
+        local base
+        base="$(head -n1 "$ml4w_term" \
+            | sed -E 's/[[:space:]]+-e[[:space:]]+(bash|zsh|fish|sh).*$//' \
+            | tr -d '[:space:]')"
 
-        # Only touch it if it is a bare terminal name (no flags/args)
-        if [[ "$current" =~ ^[a-zA-Z0-9._-]+$ ]]; then
-            cp "$ml4w_term" "$ml4w_term.darky-backup" 2>/dev/null || true
-            # Use the bare shell name so it resolves via PATH (survives reinstalls)
-            echo "$current -e $CHOSEN_SHELL" > "$ml4w_term"
+        # Only touch it if what remains is a bare terminal name (no flags/args)
+        if [[ "$base" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+            [ -f "$ml4w_term.darky-backup" ] \
+                || cp "$ml4w_term" "$ml4w_term.darky-backup" 2>/dev/null || true
+            # Bare shell name so it resolves via PATH (survives reinstalls)
+            echo "$base -e $CHOSEN_SHELL" > "$ml4w_term"
             chmod +x "$ml4w_term"
             success "ml4w terminal launcher now starts ${CHOSEN_SHELL}."
         else
             info "ml4w terminal.sh has custom flags — left unchanged."
-            info "To use ${CHOSEN_SHELL}, set: $current -e $CHOSEN_SHELL"
+            info "To use ${CHOSEN_SHELL}, set: $base -e $CHOSEN_SHELL"
         fi
     fi
 
@@ -992,13 +993,12 @@ apply_shell_default() {
             echo "fastfetch --config \$HOME/.config/fastfetch/config-startup.jsonc" >> "$zshrc"
             success "Fastfetch startup added to ~/.zshrc."
         fi
+    elif [[ "$CHOSEN_SHELL" == "fish" ]]; then
+        setup_fish
     fi
 
     # 5) Carry the user's personal settings across shells.
     #    Only when the shell actually changed — same shell means nothing to move.
-    local prev_shell
-    prev_shell="$(current_shell_name)"
-
     if [ -z "$prev_shell" ]; then
         info "Could not detect your current shell. Skipping config migration."
     elif [ "$prev_shell" == "$CHOSEN_SHELL" ]; then
@@ -1038,6 +1038,18 @@ current_shell_name() {
     local p
     p="$(getent passwd "$USER" 2>/dev/null | cut -d: -f7)"
     [ -z "$p" ] && p="$SHELL"
+
+    # On Hyprland/ml4w the terminal launcher overrides the login shell, so it
+    # is the real source of truth for what the user actually sees.
+    local ml4w_term="$HOME/.config/ml4w/settings/terminal.sh"
+    if [ -f "$ml4w_term" ]; then
+        local launcher
+        launcher="$(head -n1 "$ml4w_term" 2>/dev/null)"
+        if [[ "$launcher" =~ -e[[:space:]]+(bash|zsh|fish|sh) ]]; then
+            p="${BASH_REMATCH[1]}"
+        fi
+    fi
+
     case "$p" in
         *zsh)  echo "zsh" ;;
         *fish) echo "fish" ;;
@@ -1385,8 +1397,7 @@ main() {
     apply_konsole_profile
     apply_hyprland_config
     apply_shell_rc
-    apply_shell_default   # chsh + ml4w terminal launcher + zsh rc wiring
-    setup_fish   # after starship/fastfetch, so it can wire them into config.fish
+    apply_shell_default   # chsh + ml4w terminal launcher + rc wiring + migration
 
     echo ""
     info "Relaunching terminal with Darky theme in 3 seconds..."

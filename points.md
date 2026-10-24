@@ -32,7 +32,18 @@ and terminals (Konsole, Kitty, Alacritty, WezTerm, Foot, Xterm) and shells
 - It must NEVER run when `from == to` — that would read and write the same file.
   Both `apply_shell_default` and the function itself guard against this.
 - `current_shell_name` reads the login shell from passwd (not `$SHELL`), because
-  a running session often still exports the old value.
+  a running session often still exports the old value. It ALSO parses the shell
+  out of `terminal.sh` (`-e <shell>`), because on ml4w that launcher — not
+  passwd — decides what the user actually sees.
+- `apply_shell_default` must detect the previous shell BEFORE rewriting
+  `terminal.sh`, otherwise the launcher already reports the new shell and the
+  migration is skipped as "nothing to move".
+- When rewriting `terminal.sh`, strip any previously appended `-e <shell>` first
+  (see the `sed -E` line). Without it, a second run sees `kitty -e zsh`, fails
+  the bare-name regex, and silently leaves the old shell in place — the
+  "picked fish but still got zsh" bug.
+- The `.darky-backup` of `terminal.sh` is only written once (when it does not
+  exist yet), so repeated runs never overwrite the user's original value.
 - bash <-> zsh copy verbatim; bash <-> fish go through `bash_line_to_fish` /
   `fish_line_to_posix`. Lines that cannot be translated safely are kept as
   `# [Darky] needs manual port: ...` instead of being lost.
