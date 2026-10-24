@@ -183,6 +183,34 @@ things, so the installer handles them explicitly:
   Zsh is active immediately without logging out.
 - Both files are restored by `uninstall.sh`.
 
+### Switching shells without losing your setup
+When you pick a different shell than the one you are currently using, Darky asks
+whether to carry your personal settings over:
+
+```
+━━━ Shell config migration ━━━
+  Switching from Bash to Zsh.
+  Found 12 personal line(s) in ~/.bashrc
+  (aliases, environment variables, PATH changes, functions...)
+
+  Copy your bash settings into zsh? [y/N]
+```
+
+- **Same shell = no question.** If you are already on Bash and pick Bash, nothing
+  is asked and nothing is touched — there is nothing to move.
+- **What gets copied**: aliases, `export`/`set -gx` variables, `PATH` changes,
+  functions and comments. Darky's own lines (starship, fastfetch, the bridge) are
+  filtered out so they never get duplicated.
+- **What gets converted**: Bash ↔ Zsh copy verbatim (compatible syntax). Bash ↔
+  Fish are translated (`export X=y` → `set -gx X y`, `$(cmd)` → `(cmd)`,
+  `alias x='y'` → `alias x 'y'`). Anything that cannot be translated safely is
+  kept as `# [Darky] needs manual port: ...` so you never silently lose a line.
+- **ssh / gpg agent**: a shell switch normally kills `SSH_AUTH_SOCK`, which is why
+  GPG/YubiKey fingerprints seem to "disappear". Darky adds a small block that
+  re-attaches gpg-agent (or starts ssh-agent) on every new shell.
+- **Nothing is overwritten silently**: the target rc is backed up to
+  `<rc>.darky-backup`, and `uninstall.sh` restores it.
+
 ### Arch notes
 - Everything except KDE Rounded Corners is supported on Arch. That effect is installed from a Fedora COPR repo, so the installer skips it on Arch — use the AUR package instead:
   ```bash

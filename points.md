@@ -25,3 +25,20 @@ and terminals (Konsole, Kitty, Alacritty, WezTerm, Foot, Xterm) and shells
   file `99-darky-shell` `exec`s the chosen shell from there.
 - Everything Darky writes into a foreign config is backed up with a
   `.darky-backup` suffix and restored by `uninstall.sh`.
+
+## Shell config migration
+- `migrate_shell_config <from> <to>` copies the user's personal lines (aliases,
+  env vars, PATH, functions) from one shell rc to another.
+- It must NEVER run when `from == to` — that would read and write the same file.
+  Both `apply_shell_default` and the function itself guard against this.
+- `current_shell_name` reads the login shell from passwd (not `$SHELL`), because
+  a running session often still exports the old value.
+- bash <-> zsh copy verbatim; bash <-> fish go through `bash_line_to_fish` /
+  `fish_line_to_posix`. Lines that cannot be translated safely are kept as
+  `# [Darky] needs manual port: ...` instead of being lost.
+- `is_shell_boilerplate` filters out Darky's own lines (starship init, fastfetch,
+  the bridge) so they are never duplicated into the new shell.
+- `ensure_ssh_gpg_agent` re-attaches ssh/gpg-agent on every new shell — this is
+  what makes gpg fingerprints stop "disappearing" after a shell switch.
+- `remove_migrated_config` (uninstall) restores the rc from `.darky-backup`, or
+  strips the migrated block when no backup exists.

@@ -378,9 +378,37 @@ remove_shell() {
         success "ml4w terminal launcher restored."
     fi
 
+    remove_migrated_config
+
     # Remove the bash -> other-shell bridge
     rm -f "$HOME/.config/bashrc/99-darky-shell"
     success "Shell bridge removed."
+}
+
+# ─── Undo shell config migration ──────────────
+# Strips the block Darky appended when carrying settings between shells.
+remove_migrated_config() {
+    local found=0
+
+    for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.config/fish/config.fish"; do
+        [ -f "$rc" ] || continue
+        if grep -qF "Migrated from" "$rc" 2>/dev/null; then
+            found=1
+            if [ -f "${rc}.darky-backup" ]; then
+                cp "${rc}.darky-backup" "$rc"
+                success "Restored $rc from backup (migrated settings removed)."
+            else
+                # No backup: drop the migrated block and the agent section
+                sed -i '/Migrated from .* by Darky/,/^$/d' "$rc" 2>/dev/null || true
+                sed -i '/Darky — ssh\/gpg agent/,/^fi$/d' "$rc" 2>/dev/null || true
+                success "Removed migrated block from $rc."
+            fi
+        fi
+    done
+
+    if [ "$found" -eq 0 ]; then
+        info "No migrated shell settings found."
+    fi
 }
 
 # ─── Main ─────────────────────────────────────

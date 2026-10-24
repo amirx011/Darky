@@ -993,6 +993,278 @@ apply_shell_default() {
             success "Fastfetch startup added to ~/.zshrc."
         fi
     fi
+
+    # 5) Carry the user's personal settings across shells.
+    #    Only when the shell actually changed — same shell means nothing to move.
+    local prev_shell
+    prev_shell="$(current_shell_name)"
+
+    if [ -z "$prev_shell" ]; then
+        info "Could not detect your current shell. Skipping config migration."
+    elif [ "$prev_shell" == "$CHOSEN_SHELL" ]; then
+        success "You are already on ${CHOSEN_SHELL} — nothing to migrate."
+    else
+        echo ""
+        echo -e "${BOLD}━━━ Shell config migration ━━━${RESET}"
+        info "Switching from $(shell_display_name "$prev_shell") to $(shell_display_name "$CHOSEN_SHELL")."
+        migrate_shell_config "$prev_shell" "$CHOSEN_SHELL"
+    fi
+}
+
+# ─── Shell config migration ───────────────────
+# Carries the user's personal setup (aliases, env vars, ssh/gpg agent,
+# functions, PATH tweaks) from the current shell over to the chosen one,
+# so switching shells does not feel like losing everything.
+shell_rc_path() {
+    case "$1" in
+        zsh)  echo "$HOME/.zshrc" ;;
+        bash) echo "$HOME/.bashrc" ;;
+        fish) echo "$HOME/.config/fish/config.fish" ;;
+        *)    echo "" ;;
+    esac
+}
+
+shell_display_name() {
+    case "$1" in
+        zsh)  echo "Zsh" ;;
+        bash) echo "Bash" ;;
+        fish) echo "Fish" ;;
+        *)    echo "$1" ;;
+    esac
+}
+
+# Detect the shell the user is actually running right now
+current_shell_name() {
+    local p
+    p="$(getent passwd "$USER" 2>/dev/null | cut -d: -f7)"
+    [ -z "$p" ] && p="$SHELL"
+    case "$p" in
+        *zsh)  echo "zsh" ;;
+        *fish) echo "fish" ;;
+        *bash) echo "bash" ;;
+        *)     echo "" ;;
+    esac
+}
+
+# Lines that are Darky-generated or shell-init boilerplate: never migrate these
+is_shell_boilerplate() {
+    local line="$1"
+    case "$line" in
+        *"starship init"*)            return 0 ;;
+        *"config-startup.jsonc"*)     return 0 ;;
+        *"DARKY_SHELL_BRIDGE"*)       return 0 ;;
+        *"Darky —"*)                  return 0 ;;
+        *"Darky -"*)                  return 0 ;;
+        *"Darky]"*)                   return 0 ;;
+        *"fastfetch"*)                return 0 ;;
+        "")                           return 0 ;;
+    esac
+    return 1
+}
+
+# Plain comments carry context for the user — keep them, just skip Darky's own
+is_plain_comment() {
+    case "$1" in
+        \#*) return 0 ;;
+        *)   return 1 ;;
+    esac
+}
+
+# bash -> fish: rewrite the syntax that actually differs
+bash_line_to_fish() {
+    local line="$1"
+    case "$line" in
+        export\ *=*)
+            local kv="${line#export }"
+            local key="${kv%%=*}"
+            local val="${kv#*=}"
+            # $VAR -> $VAR is fine in fish too; $(cmd) -> (cmd)
+            val="$(printf '%s' "$val" | sed 's/\$(\([^)]*\))/(\1)/g')"
+            printf 'set -gx %s %s' "$key" "$val"
+            ;;
+        alias\ *=*)
+            local kv="${line#alias }"
+            printf 'alias %s %s' "${kv%%=*}" "${kv#*=}"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+    return 0
+}
+
+# fish -> bash/zsh: rewrite the syntax that actually differs
+fish_line_to_posix() {
+    local line="$1"
+    case "$line" in
+        set\ -gx\ *)
+            local kv="${line#set -gx }"
+            local key="${kv%% *}"
+            local val="${kv#* }"
+            val="$(printf '%s' "$val" | sed 's/(\([^)]*\))/\$(\1)/g')"
+            printf 'export %s=%s' "$key" "$val"
+            ;;
+        alias\ *)
+            local kv="${line#alias }"
+            printf 'alias %s=%s' "${kv%% *}" "${kv#* }"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+    return 0
+}
+
+# Copy personal config lines from one shell rc to another.
+# bash/zsh share POSIX-ish syntax so they transfer directly.
+# fish has different syntax, so it is converted line by line where possible.
+migrate_shell_config() {
+    local from="$1" to="$2"
+
+    # Same shell means there is nothing to move — never ask, never touch files.
+    if [ "$from" == "$to" ]; then
+        success "Already using $(shell_display_name "$to") — nothing to migrate."
+        return 0
+    fi
+
+    local from_rc to_rc
+    from_rc="$(shell_rc_path "$from")"
+    to_rc="$(shell_rc_path "$to")"
+
+    if [ -z "$from_rc" ] || [ -z "$to_rc" ]; then
+        warn "Unsupported shell pair: ${from} -> ${to}. Skipping migration."
+        return 0
+    fi
+
+    # Safety net: never read and write the same file
+    if [ "$from_rc" == "$to_rc" ]; then
+        warn "Source and destination are the same file. Skipping migration."
+        return 0
+    fi
+
+    if [ ! -f "$from_rc" ]; then
+        info "No ${from} config found at $from_rc. Nothing to migrate."
+        return 0
+    fi
+
+    # Count what is actually worth moving
+    local candidates=0
+    while IFS= read -r line; do
+        is_shell_boilerplate "$line" && continue
+        candidates=$((candidates + 1))
+    done < "$from_rc"
+
+    if [ "$candidates" -eq 0 ]; then
+        info "Nothing personal found in $from_rc. Nothing to migrate."
+        return 0
+    fi
+
+    echo ""
+    info "Found ${candidates} personal line(s) in $from_rc"
+    info "(aliases, environment variables, PATH changes, functions...)"
+    echo ""
+
+    if ! ask "  Copy your ${from} settings into ${to}?"; then
+        warn "Skipped. Your ${from} config was left untouched."
+        return 0
+    fi
+
+    mkdir -p "$(dirname "$to_rc")"
+    [ -f "$to_rc" ] || touch "$to_rc"
+
+    # Back up the destination before touching it
+    cp "$to_rc" "${to_rc}.darky-backup" 2>/dev/null || true
+
+    local moved=0 skipped=0
+    local marker="# ── Migrated from ${from} by Darky ──"
+
+    if ! grep -qF "$marker" "$to_rc" 2>/dev/null; then
+        echo "" >> "$to_rc"
+        echo "$marker" >> "$to_rc"
+    fi
+
+    while IFS= read -r line; do
+        is_shell_boilerplate "$line" && continue
+
+        # Comments are harmless in every shell — carry them over as-is
+        if is_plain_comment "$line"; then
+            echo "$line" >> "$to_rc"
+            moved=$((moved + 1))
+            continue
+        fi
+
+        # Already present in the destination? Do not duplicate it.
+        if grep -qF -- "$line" "$to_rc" 2>/dev/null; then
+            skipped=$((skipped + 1))
+            continue
+        fi
+
+        if [[ "$to" == "fish" ]]; then
+            if converted="$(bash_line_to_fish "$line")"; then
+                echo "$converted" >> "$to_rc"
+                moved=$((moved + 1))
+            else
+                # Not safely translatable — keep it as a hint instead of losing it
+                echo "# [Darky] needs manual port: $line" >> "$to_rc"
+                skipped=$((skipped + 1))
+            fi
+        elif [[ "$from" == "fish" ]]; then
+            if converted="$(fish_line_to_posix "$line")"; then
+                echo "$converted" >> "$to_rc"
+                moved=$((moved + 1))
+            else
+                echo "# [Darky] needs manual port: $line" >> "$to_rc"
+                skipped=$((skipped + 1))
+            fi
+        else
+            # bash <-> zsh: syntax is compatible enough to copy verbatim
+            echo "$line" >> "$to_rc"
+            moved=$((moved + 1))
+        fi
+    done < "$from_rc"
+
+    success "Migrated ${moved} line(s) into $to_rc (${skipped} skipped)."
+    info "Backup of the previous file: ${to_rc}.darky-backup"
+
+    # ssh/gpg agent: the usual reason fingerprints "disappear"
+    ensure_ssh_gpg_agent "$from" "$to" "$to_rc"
+}
+
+# ssh-agent / gpg-agent are per-session, so a new shell starts without them.
+# Add a small block that re-attaches the agents on every new shell.
+ensure_ssh_gpg_agent() {
+    local from="$1" to="$2" to_rc="$3"
+    local marker="Darky — ssh/gpg agent"
+
+    grep -qF "$marker" "$to_rc" 2>/dev/null && return 0
+
+    # Only bother if the user actually has keys
+    local has_keys=0
+    [ -d "$HOME/.ssh" ] && ls "$HOME/.ssh"/id_* &>/dev/null && has_keys=1
+    [ -d "$HOME/.gnupg" ] && has_keys=1
+    [ "$has_keys" -eq 0 ] && return 0
+
+    echo "" >> "$to_rc"
+    echo "# ${marker}" >> "$to_rc"
+
+    if [[ "$to" == "fish" ]]; then
+        {
+            echo "if not set -q SSH_AUTH_SOCK"
+            echo "    set -gx SSH_AUTH_SOCK (gpgconf --list-dirs agent-ssh-socket 2>/dev/null)"
+            echo "end"
+        } >> "$to_rc"
+    else
+        {
+            echo 'if [ -z "$SSH_AUTH_SOCK" ] && command -v gpgconf >/dev/null 2>&1; then'
+            echo '    export SSH_AUTH_SOCK="$(gpgconf --list-dirs agent-ssh-socket 2>/dev/null)"'
+            echo 'fi'
+            echo 'if [ -z "$SSH_AUTH_SOCK" ] && command -v ssh-agent >/dev/null 2>&1; then'
+            echo '    eval "$(ssh-agent -s)" >/dev/null 2>&1'
+            echo 'fi'
+        } >> "$to_rc"
+    fi
+
+    success "ssh/gpg agent re-attach added to $to_rc."
 }
 
 # ─── Hyprland: font + terminal + gaps tweaks ───
