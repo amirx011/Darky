@@ -42,8 +42,8 @@ detect_distro() {
         error "Could not detect distro. /etc/os-release not found."
     fi
 
-    if [[ "$DISTRO_ID" == "arch" || "$DISTRO_LIKE" == *"arch"* ||
-          "$DISTRO_ID" == "parch" || "$DISTRO_ID" == "manjaro" ]]; then
+    # ── Arch family (Arch, Manjaro, EndeavourOS, Garuda, CachyOS, Artix, Parch...) ──
+    if [[ "$DISTRO_ID" == "arch" || "$DISTRO_LIKE" == *"arch"* ]]; then
         PKG_MANAGER="pacman"
     elif [[ "$DISTRO_ID" == "fedora" || "$DISTRO_LIKE" == *"rhel"* ||
             "$DISTRO_LIKE" == *"fedora"* || "$DISTRO_ID" == "rhel" ||
@@ -194,8 +194,13 @@ remove_starship() {
         success "Starship removed via ${PKG_MANAGER}."
     fi
 
-    sudo rm -f /usr/local/bin/starship
-    success "Starship binary removed."
+    # Covers script-installed binaries (official installer / cargo)
+    for bin in /usr/local/bin/starship "$HOME/.cargo/bin/starship"; do
+        if [ -e "$bin" ]; then
+            sudo rm -f "$bin"
+            success "Removed binary: $bin"
+        fi
+    done
 
     for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
         if [ -f "$rc" ]; then

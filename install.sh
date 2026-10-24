@@ -44,15 +44,14 @@ detect_distro() {
         error "Could not detect distro. /etc/os-release not found."
     fi
 
+    # ── Arch family (Arch, Manjaro, EndeavourOS, Garuda, CachyOS, Artix, Parch...) ──
     if [[ "$DISTRO_ID" == "arch" || "$DISTRO_LIKE" == *"arch"* ]]; then
         PKG_MANAGER="pacman"
-        info "Detected distro: Arch Linux"
-    elif [[ "$DISTRO_ID" == "parch" ]]; then
-        PKG_MANAGER="pacman"
-        info "Detected distro: Parch Linux"
-    elif [[ "$DISTRO_ID" == "manjaro" ]]; then
-        PKG_MANAGER="pacman"
-        info "Detected distro: Manjaro Linux"
+        if command -v pacman &>/dev/null; then
+            info "Detected distro: Arch-based (${PRETTY_NAME:-Arch Linux})"
+        else
+            error "Arch-based distro detected but 'pacman' was not found."
+        fi
     elif [[ "$DISTRO_ID" == "fedora" ]]; then
         PKG_MANAGER="dnf"
         info "Detected distro: Fedora"
@@ -77,7 +76,18 @@ install_pkg_silent() {
     local pkg="$1"
     info "Installing ${pkg}..."
     if [[ "$PKG_MANAGER" == "pacman" ]]; then
-        sudo pacman -S --noconfirm "$pkg"
+        # --needed: skip reinstall. On failure refresh the db and retry once.
+        if sudo pacman -S --needed --noconfirm "$pkg"; then
+            success "${pkg} installed."
+            return 0
+        fi
+        warn "Could not install ${pkg} from the local database. Refreshing..."
+        sudo pacman -Sy --noconfirm || true
+        if sudo pacman -S --needed --noconfirm "$pkg"; then
+            success "${pkg} installed."
+            return 0
+        fi
+        return 1
     elif [[ "$PKG_MANAGER" == "dnf" ]]; then
         sudo dnf install -y "$pkg"
     else
@@ -216,6 +226,47 @@ jetbrains_installed() {
     return 1
 }
 
+# ─── Ensure curl + unzip are available (needed for direct downloads) ───
+ensure_download_tools() {
+    local missing=()
+    command -v curl  &>/dev/null || missing+=("curl")
+    command -v unzip &>/dev/null || missing+=("unzip")
+
+    if [ ${#missing[@]} -gt 0 ]; then
+        info "Installing required tools: ${missing[*]}"
+        for tool in "${missing[@]}"; do
+            install_pkg_silent "$tool" || warn "Could not install ${tool}."
+        done
+    fi
+}
+
+# ─── Install JetBrains Mono from the official ZIP (distro-independent) ──
+install_font_from_zip() {
+    ensure_download_tools
+    if ! command -v curl &>/dev/null || ! command -v unzip &>/dev/null; then
+        warn "curl/unzip unavailable. Install JetBrains Mono manually."
+        return 1
+    fi
+
+    info "Installing JetBrains Mono via direct download..."
+    if ! curl -fsSL "https://download.jetbrains.com/fonts/JetBrainsMono-2.304.zip" \
+            -o /tmp/JetBrainsMono.zip; then
+        warn "Download failed. Skipping JetBrains Mono."
+        return 1
+    fi
+
+    rm -rf /tmp/JetBrainsMono
+    unzip -oq /tmp/JetBrainsMono.zip -d /tmp/JetBrainsMono
+    mkdir -p "$HOME/.local/share/fonts/JetBrainsMono"
+    cp /tmp/JetBrainsMono/fonts/ttf/*.ttf "$HOME/.local/share/fonts/JetBrainsMono/" 2>/dev/null || true
+    if command -v fc-cache &>/dev/null; then
+        fc-cache -f "$HOME/.local/share/fonts" &>/dev/null || true
+    fi
+    rm -rf /tmp/JetBrainsMono /tmp/JetBrainsMono.zip
+    success "JetBrains Mono installed."
+    return 0
+}
+
 install_font() {
     echo ""
     echo -e "${BOLD}━━━ Step 1: JetBrains Mono Font ━━━${RESET}"
@@ -226,17 +277,17 @@ install_font() {
     fi
 
     if [[ "$PKG_MANAGER" == "pacman" ]]; then
-        install_pkg "ttf-jetbrains-mono" "JetBrains Mono (Arch)"
+        if ask "  Install JetBrains Mono (ttf-jetbrains-mono)?"; then
+            if ! install_pkg_silent "ttf-jetbrains-mono"; then
+                warn "pacman install failed. Falling back to direct download..."
+                install_font_from_zip
+            fi
+        else
+            warn "Skipped JetBrains Mono."
+        fi
     elif [[ "$PKG_MANAGER" == "apt" ]]; then
         if ask "  Install JetBrains Mono font?"; then
-            info "Installing JetBrains Mono via direct download..."
-            curl -sL "https://download.jetbrains.com/fonts/JetBrainsMono-2.304.zip" -o /tmp/JetBrainsMono.zip
-            unzip /tmp/JetBrainsMono.zip -d /tmp/JetBrainsMono
-            mkdir -p ~/.local/share/fonts/JetBrainsMono
-            cp /tmp/JetBrainsMono/fonts/ttf/*.ttf ~/.local/share/fonts/JetBrainsMono/
-            fc-cache -fv
-            rm -rf /tmp/JetBrainsMono /tmp/JetBrainsMono.zip
-            success "JetBrains Mono installed."
+            install_font_from_zip
         else
             warn "Skipped JetBrains Mono."
         fi
@@ -327,6 +378,16 @@ install_fastfetch() {
                 warn "Skipped fastfetch."
                 return
             fi
+        elif [[ "$PKG_MANAGER" == "pacman" ]]; then
+            if ask "  Install fastfetch (pacman)?"; then
+                if ! install_pkg_silent "fastfetch"; then
+                    warn "fastfetch not available in repos."
+                    warn "On Arch you can build it from the AUR: yay -S fastfetch"
+                fi
+            else
+                warn "Skipped fastfetch."
+                return
+            fi
         else
             install_pkg "fastfetch" "fastfetch"
         fi
@@ -367,7 +428,15 @@ install_starship() {
         info "Installing Starship..."
 
         if [[ "$PKG_MANAGER" == "pacman" ]]; then
-            sudo pacman -S --noconfirm starship
+            if ! sudo pacman -S --needed --noconfirm starship; then
+                info "starship not in pacman repos. Using official install script..."
+                if curl -sS --connect-timeout 20 https://starship.rs/install.sh | sh -s -- -y; then
+                    success "Starship installed via install script."
+                else
+                    warn "Starship installation failed."
+                    return
+                fi
+            fi
         elif [[ "$PKG_MANAGER" == "dnf" ]]; then
             if dnf info starship &>/dev/null; then
                 sudo dnf install -y starship

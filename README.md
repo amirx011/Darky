@@ -44,7 +44,7 @@ Darky/
 
 
 ## Installation
-> Supports: all distributions (Fedora,Arch-based,Arch,RHEL-Based,kali,kubuntu,...)
+> Supports: Arch & Arch-based (Manjaro, EndeavourOS, Garuda, CachyOS, Artix, Parch), Fedora, RHEL-based, Debian/Ubuntu/Kali
 
 
 > Recommended:`chmod +x install.sh && ./install.sh`
@@ -54,14 +54,19 @@ Darky/
 
 ### 1. Install Font 
 ```bash
-#Fedora / RHEL-based
+# Fedora / RHEL-based
 sudo dnf install jetbrains-mono-fonts-all
 
-#Arch
+# Arch / Arch-based
 sudo pacman -S ttf-jetbrains-mono
 
-# Ubuntu / Debian / Kali
-curl -sL https://download.jetbrains.com/fonts/JetBrainsMono-2.304.zip 
+# Ubuntu / Debian / Kali (or any distro, no package needed)
+curl -fsSL https://download.jetbrains.com/fonts/JetBrainsMono-2.304.zip -o /tmp/JetBrainsMono.zip
+unzip -oq /tmp/JetBrainsMono.zip -d /tmp/JetBrainsMono
+mkdir -p ~/.local/share/fonts/JetBrainsMono
+cp /tmp/JetBrainsMono/fonts/ttf/*.ttf ~/.local/share/fonts/JetBrainsMono/
+fc-cache -f ~/.local/share/fonts
+rm -rf /tmp/JetBrainsMono /tmp/JetBrainsMono.zip
 ```
 ### 2. Konsole Theme
 ```bash
@@ -79,12 +84,14 @@ cp Darky.profile ~/.local/share/konsole
 # Fedora / RHEL-based
 sudo dnf install fastfetch
 
-# Arch
-
+# Arch / Arch-based
 sudo pacman -S fastfetch
+# If it is not in your repos (older mirrors / AUR-only setups):
+#   yay -S fastfetch
 
 # Ubuntu / Debian / Kali
-curl -sL https://github.com/fastfetch-cli/fastfetch/releases/latest/download/fastfetch-linux-amd64.deb
+curl -sL https://github.com/fastfetch-cli/fastfetch/releases/latest/download/fastfetch-linux-amd64.deb -o /tmp/fastfetch.deb
+sudo apt install -y /tmp/fastfetch.deb
 
 # Copy config files
 mkdir -p ~/.config/fastfetch
@@ -112,6 +119,14 @@ echo 'eval "$(starship init zsh)"' >> ~/.zshrc
 echo 'eval "$(starship init bash)"' >> ~/.bashrc
 
 ```
+
+### Arch notes
+- Everything except KDE Rounded Corners is supported on Arch. That effect is installed from a Fedora COPR repo, so the installer skips it on Arch — use the AUR package instead:
+  ```bash
+  yay -S kwin-effect-rounded-corners-git
+  ```
+- The installer uses `pacman -S --needed --noconfirm` and refreshes the database (`pacman -Sy`) automatically if a package is not found.
+- Prefer a full system upgrade before installing: `sudo pacman -Syu`
 
 ## License
 MIT
