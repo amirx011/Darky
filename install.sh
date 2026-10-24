@@ -664,7 +664,11 @@ install_terminal_theme() {
         esac
     done
 
-    setup_fish
+    # Only wire up fish when the user actually chose it — otherwise we would
+    # silently create ~/.config/fish/config.fish for bash/zsh users.
+    if [[ "$CHOSEN_SHELL" == "fish" ]]; then
+        setup_fish
+    fi
     success "Terminal theming done."
 }
 
@@ -966,9 +970,12 @@ apply_shell_default() {
         fi
     fi
 
-    # 3) ml4w bash loader: bridge it to the chosen shell's rc file
-    if [ -d "$HOME/.config/bashrc" ] && [[ "$CHOSEN_SHELL" != "bash" ]]; then
-        local bridge="$HOME/.config/bashrc/99-darky-shell"
+    # 3) ml4w bash loader: bridge it to the chosen shell's rc file.
+    #    Only needed when the shell actually changed — on a same-shell run the
+    #    login shell is already correct, so a bridge would be pointless.
+    local bridge="$HOME/.config/bashrc/99-darky-shell"
+    if [ -d "$HOME/.config/bashrc" ] && [[ "$CHOSEN_SHELL" != "bash" ]] \
+       && [ "$prev_shell" != "$CHOSEN_SHELL" ]; then
         {
             echo "# Darky — start ${CHOSEN_SHELL} instead of bash (generated)"
             echo "if [ -z \"\$DARKY_SHELL_BRIDGE\" ] && [ -t 1 ]; then"
@@ -977,6 +984,11 @@ apply_shell_default() {
             echo "fi"
         } > "$bridge"
         success "ml4w bash loader will hand over to ${CHOSEN_SHELL}."
+    elif [ -f "$bridge" ]; then
+        # Switching back to bash (or already on the chosen shell): drop the old
+        # bridge, otherwise it would keep exec'ing the previous shell.
+        rm -f "$bridge"
+        success "Removed the old shell bridge."
     fi
 
     # 4) Make the new shell read the same starship/fastfetch setup

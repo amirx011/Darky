@@ -1,0 +1,12 @@
+# ── Internal notes ─────────────────────────────
+# Technical notes for maintainers/AI assistants. Not useful for users,
+# so it stays out of the public repository.
+points.md
+AGENTS.md
+
+# ── Editor / tooling leftovers ─────────────────
+.polydev/
+.base/
+*.swp
+*~
+.DS_Store
