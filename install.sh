@@ -719,10 +719,22 @@ install_fastfetch() {
 
     if ask "  Copy fastfetch configs to ~/.config/fastfetch/?"; then
         mkdir -p ~/.config/fastfetch
+
+        # Back up an existing config.jsonc (e.g. ml4w dotfiles) before touching it
+        if [ -f ~/.config/fastfetch/config.jsonc ]; then
+            cp ~/.config/fastfetch/config.jsonc \
+               ~/.config/fastfetch/config.jsonc.darky-backup
+            info "Existing config.jsonc backed up to config.jsonc.darky-backup"
+        fi
+
         cp "$TMP_DIR/config.jsonc"         ~/.config/fastfetch/
         cp "$TMP_DIR/config-startup.jsonc" ~/.config/fastfetch/
         cp "$TMP_DIR/bat.txt"             ~/.config/fastfetch/
         success "fastfetch configs copied."
+
+        # Some dotfile setups (ml4w/Hyprland) run bare `fastfetch` on shell start,
+        # which reads config.jsonc — not config-startup.jsonc. Point it at our logo.
+        apply_fastfetch_logo
 
         STARTUP_LINE="fastfetch --config $HOME/.config/fastfetch/config-startup.jsonc"
 
@@ -737,6 +749,37 @@ install_fastfetch() {
         fi
     else
         warn "Skipped fastfetch config."
+    fi
+}
+
+# ─── Fastfetch logo: make bare `fastfetch` use our bat logo ───
+# Dotfile setups like ml4w/Hyprland run `fastfetch` with no --config, so the
+# logo comes from config.jsonc. Rewrite its "source" to point at bat.txt.
+apply_fastfetch_logo() {
+    local cfg="$HOME/.config/fastfetch/config.jsonc"
+    # Use ~ so the config keeps working if $HOME ever changes
+    local logo="~/.config/fastfetch/bat.txt"
+
+    [ -f "$cfg" ] || return 0
+
+    if grep -qF "bat.txt" "$cfg"; then
+        success "Fastfetch logo already points to bat.txt."
+        return 0
+    fi
+
+    # Replace the logo source line, whatever path it currently uses.
+    # Matches:  "source": "~/.config/ml4w/assets/ml4w.png",
+    if grep -qE '"source"[[:space:]]*:' "$cfg"; then
+        sed -i -E "s|\"source\"[[:space:]]*:[[:space:]]*\"[^\"]*\"|\"source\": \"$logo\"|" "$cfg"
+        success "Fastfetch logo replaced with bat.txt in config.jsonc."
+    else
+        # No source key at all — inject one into the logo block
+        if grep -qE '"logo"[[:space:]]*:' "$cfg"; then
+            sed -i -E "s|(\"logo\"[[:space:]]*:[[:space:]]*\{)|\1 \"source\": \"$logo\", \"type\": \"file\",|" "$cfg"
+            success "Fastfetch logo source injected into config.jsonc."
+        else
+            warn "Could not find a logo block in config.jsonc. Skipping logo override."
+        fi
     fi
 }
 
@@ -872,6 +915,86 @@ apply_konsole_profile() {
     fi
 }
 
+# ─── Shell: make the chosen shell actually active ─────────
+# `chsh` only affects the NEXT login, and dotfile setups like ml4w open the
+# terminal through ~/.config/ml4w/settings/terminal.sh, which inherits the
+# session's shell. This makes the choice effective immediately and persistent.
+apply_shell_default() {
+    local shell_path
+    case "$CHOSEN_SHELL" in
+        zsh)  shell_path="$(command -v zsh  2>/dev/null)" ;;
+        fish) shell_path="$(command -v fish 2>/dev/null)" ;;
+        *)    shell_path="$(command -v bash 2>/dev/null)" ;;
+    esac
+
+    if [ -z "$shell_path" ]; then
+        warn "Could not locate the ${CHOSEN_SHELL} binary. Skipping shell setup."
+        return 0
+    fi
+
+    # 1) Register in /etc/shells and set as login shell
+    grep -qF "$shell_path" /etc/shells 2>/dev/null \
+        || echo "$shell_path" | sudo tee -a /etc/shells > /dev/null
+
+    if [ "$(getent passwd "$USER" | cut -d: -f7)" != "$shell_path" ]; then
+        if sudo chsh -s "$shell_path" "$USER" 2>/dev/null; then
+            success "Login shell set to ${CHOSEN_SHELL} (active after next login)."
+        else
+            warn "chsh failed. Run manually: chsh -s $shell_path"
+        fi
+    else
+        success "Login shell is already ${CHOSEN_SHELL}."
+    fi
+
+    # 2) ml4w / Hyprland: make the terminal launcher use the chosen shell
+    local ml4w_term="$HOME/.config/ml4w/settings/terminal.sh"
+    if [ -f "$ml4w_term" ]; then
+        local current
+        current="$(head -n1 "$ml4w_term" | tr -d '[:space:]')"
+
+        # Only touch it if it is a bare terminal name (no flags/args)
+        if [[ "$current" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+            cp "$ml4w_term" "$ml4w_term.darky-backup" 2>/dev/null || true
+            # Use the bare shell name so it resolves via PATH (survives reinstalls)
+            echo "$current -e $CHOSEN_SHELL" > "$ml4w_term"
+            chmod +x "$ml4w_term"
+            success "ml4w terminal launcher now starts ${CHOSEN_SHELL}."
+        else
+            info "ml4w terminal.sh has custom flags — left unchanged."
+            info "To use ${CHOSEN_SHELL}, set: $current -e $CHOSEN_SHELL"
+        fi
+    fi
+
+    # 3) ml4w bash loader: bridge it to the chosen shell's rc file
+    if [ -d "$HOME/.config/bashrc" ] && [[ "$CHOSEN_SHELL" != "bash" ]]; then
+        local bridge="$HOME/.config/bashrc/99-darky-shell"
+        {
+            echo "# Darky — start ${CHOSEN_SHELL} instead of bash (generated)"
+            echo "if [ -z \"\$DARKY_SHELL_BRIDGE\" ] && [ -t 1 ]; then"
+            echo "    export DARKY_SHELL_BRIDGE=1"
+            echo "    exec $CHOSEN_SHELL"
+            echo "fi"
+        } > "$bridge"
+        success "ml4w bash loader will hand over to ${CHOSEN_SHELL}."
+    fi
+
+    # 4) Make the new shell read the same starship/fastfetch setup
+    if [[ "$CHOSEN_SHELL" == "zsh" ]]; then
+        local zshrc="$HOME/.zshrc"
+        [ -f "$zshrc" ] || touch "$zshrc"
+        if ! grep -qF "starship init zsh" "$zshrc" 2>/dev/null \
+           && command -v starship &>/dev/null; then
+            echo 'eval "$(starship init zsh)"' >> "$zshrc"
+            success "Starship init added to ~/.zshrc."
+        fi
+        if ! grep -qF "config-startup.jsonc" "$zshrc" 2>/dev/null \
+           && command -v fastfetch &>/dev/null; then
+            echo "fastfetch --config \$HOME/.config/fastfetch/config-startup.jsonc" >> "$zshrc"
+            success "Fastfetch startup added to ~/.zshrc."
+        fi
+    fi
+}
+
 # ─── Hyprland: font + terminal + gaps tweaks ───
 apply_hyprland_config() {
     local conf_dir="$HOME/.config/hypr"
@@ -990,6 +1113,7 @@ main() {
     apply_konsole_profile
     apply_hyprland_config
     apply_shell_rc
+    apply_shell_default   # chsh + ml4w terminal launcher + zsh rc wiring
     setup_fish   # after starship/fastfetch, so it can wire them into config.fish
 
     echo ""

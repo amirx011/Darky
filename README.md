@@ -168,6 +168,21 @@ decoration {
 }
 ```
 
+### ml4w dotfiles (Hyprland) notes
+The [ml4w dotfiles](https://github.com/mylinuxforwork/dotfiles) override a few
+things, so the installer handles them explicitly:
+
+- **Fastfetch logo**: ml4w runs bare `fastfetch` from `~/.config/bashrc/30-autostart`,
+  which reads `~/.config/fastfetch/config.jsonc` — not `config-startup.jsonc`.
+  The installer backs that file up and rewrites its logo `source` to `bat.txt`,
+  so the Darky bat shows up instead of the ml4w logo.
+- **Shell**: `chsh` only takes effect on the next login, and ml4w opens the
+  terminal through `~/.config/ml4w/settings/terminal.sh` (usually just `kitty`).
+  The installer rewrites it to `kitty -e zsh` (backup kept) and adds a
+  `~/.config/bashrc/99-darky-shell` bridge that `exec`s your chosen shell, so
+  Zsh is active immediately without logging out.
+- Both files are restored by `uninstall.sh`.
+
 ### Arch notes
 - Everything except KDE Rounded Corners is supported on Arch. That effect is installed from a Fedora COPR repo, so the installer skips it on Arch — use the AUR package instead:
   ```bash

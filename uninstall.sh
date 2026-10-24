@@ -316,6 +316,13 @@ remove_darky_configs() {
            "$HOME/.config/fastfetch/bat.txt"
     success "Darky fastfetch configs removed."
 
+    # Restore the config.jsonc that belonged to another dotfile setup (e.g. ml4w)
+    if [ -f "$HOME/.config/fastfetch/config.jsonc.darky-backup" ]; then
+        mv "$HOME/.config/fastfetch/config.jsonc.darky-backup" \
+           "$HOME/.config/fastfetch/config.jsonc"
+        success "Previous config.jsonc restored (ml4w or other setup)."
+    fi
+
     # حذف startup line از shell rc ها
     for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
         if [ -f "$rc" ]; then
@@ -362,6 +369,18 @@ remove_shell() {
     else
         error "Failed to restore shell."
     fi
+
+    # Undo the ml4w terminal launcher override
+    local ml4w_term="$HOME/.config/ml4w/settings/terminal.sh"
+    if [ -f "$ml4w_term.darky-backup" ]; then
+        mv "$ml4w_term.darky-backup" "$ml4w_term"
+        chmod +x "$ml4w_term"
+        success "ml4w terminal launcher restored."
+    fi
+
+    # Remove the bash -> other-shell bridge
+    rm -f "$HOME/.config/bashrc/99-darky-shell"
+    success "Shell bridge removed."
 }
 
 # ─── Main ─────────────────────────────────────
