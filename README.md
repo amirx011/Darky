@@ -1,6 +1,6 @@
 # Darky
 A clean terminal environment for KDE Plasma, Hyprland and any other desktop
-(Zsh / Bash / Fish — Konsole, Kitty, Alacritty, WezTerm, Foot, Xterm)
+(Zsh / Bash / Fish — Konsole, Kitty, Alacritty, WezTerm, Foot, Ghostty, Xterm)
 
 
 ![Platform](https://img.shields.io/badge/Platform-KDE_Plasma_%7C_Hyprland-blue)
@@ -19,11 +19,12 @@ A clean terminal environment for KDE Plasma, Hyprland and any other desktop
 ![Terminal](screenshots/konsole.png)
 
 
-## Structure 
- ```
-Darky/
+## Structure
 
-.
+```
+Darky/
+├── .gitattributes
+├── .gitignore
 ├── bat.txt
 ├── config.jsonc
 ├── config-startup.jsonc
@@ -33,20 +34,35 @@ Darky/
 ├── install.sh
 ├── LICENSE
 ├── README.md
-├── screenshots
-│   ├── fastfetch1.png
-│   ├── kali.png
-│   ├── konsole.gif
-│   └── konsole.png
+├── screenshots/
+│   ├── fastfetch1.png
+│   ├── kali.png
+│   ├── konsole.gif
+│   └── konsole.png
 ├── starship.toml
-├── uninstall.sh
-
-
+└── uninstall.sh
 ```
+
+| File | What it is |
+|------|------------|
+| `install.sh` | The installer: detects your distro, desktop, shell and terminals, then installs the font, themes every terminal, and sets up fastfetch + Starship. |
+| `uninstall.sh` | Reverses everything `install.sh` did and restores your previous terminal. Also supports `--restore-only` and `--help`. |
+| `darky-terminal-state.sh` | Helper module sourced by both scripts. Saves your pre-Darky terminal setup (emulator, Konsole profile, ml4w launcher, colours) and restores it. |
+| `DarkySlate.colorscheme` | Konsole colour scheme: the Darky palette (80% opaque background). |
+| `Darky.profile` | Konsole profile: `DarkySlate` scheme, JetBrains Mono 11, blur, margins, 50k scrollback. |
+| `config.jsonc` | Fastfetch config used when you run `fastfetch` manually — logo is `auto`, so it shows your distro's logo. |
+| `config-startup.jsonc` | Fastfetch config used for the startup line — shows the Darky bat logo from `bat.txt`. |
+| `bat.txt` | The Darky bat logo (referenced by `config-startup.jsonc`). |
+| `starship.toml` | Starship prompt configuration. |
+| `screenshots/` | Images used in this README. |
+
+> The scripts keep their runtime files outside the repo: backups go to
+> `~/.config/darky-backup/` (terminal state, old configs) and themes to each
+> terminal's own `darky.*` file.
 
 
 ## Installation
-> Supports: Arch & Arch-based (Manjaro, EndeavourOS, Garuda, CachyOS, Artix, Parch), Fedora, RHEL-based, Debian/Ubuntu/Kali
+> Supports: Arch & Arch-based (Manjaro, EndeavourOS, Garuda, CachyOS, Artix, Parch), Fedora, RHEL-based, Debian/Ubuntu/Kali (+ Mint, Pop!_OS, Elementary)
 > Desktops: KDE Plasma, Hyprland, and anything else (terminal theming is desktop-independent)
 > Terminals: Konsole, Kitty, Alacritty, WezTerm, Foot, Ghostty, Xterm — every installed one gets themed
 > Shells: Zsh, Bash, Fish
