@@ -1,6 +1,7 @@
 # Darky
 A clean terminal environment for KDE Plasma, Hyprland and any other desktop
 (Zsh / Bash / Fish — Konsole, Kitty, Alacritty, WezTerm, Foot, Ghostty, Xterm)
+in four palettes: **blue**, **orange**, **purple** and **green**.
 
 
 ![Platform](https://img.shields.io/badge/Platform-KDE_Plasma_%7C_Hyprland-blue)
@@ -29,7 +30,6 @@ Darky/
 ├── config.jsonc
 ├── config-startup.jsonc
 ├── Darky.profile
-├── DarkySlate.colorscheme
 ├── darky-terminal-state.sh
 ├── install.sh
 ├── LICENSE
@@ -40,6 +40,11 @@ Darky/
 │   ├── konsole.gif
 │   └── konsole.png
 ├── starship.toml
+├── themes/
+│   ├── DarkyBlue.colorscheme
+│   ├── DarkyGreen.colorscheme
+│   ├── DarkyOrange.colorscheme
+│   └── DarkyPurple.colorscheme
 └── uninstall.sh
 ```
 
@@ -48,8 +53,8 @@ Darky/
 | `install.sh` | The installer: detects your distro, desktop, shell and terminals, then installs the font, themes every terminal, and sets up fastfetch + Starship. |
 | `uninstall.sh` | Reverses everything `install.sh` did and restores your previous terminal. Also supports `--restore-only` and `--help`. |
 | `darky-terminal-state.sh` | Helper module sourced by both scripts. Saves your pre-Darky terminal setup (emulator, Konsole profile, ml4w launcher, colours) and restores it. |
-| `DarkySlate.colorscheme` | Konsole colour scheme: the Darky palette (80% opaque background). |
-| `Darky.profile` | Konsole profile: `DarkySlate` scheme, JetBrains Mono 11, blur, margins, 50k scrollback. |
+| `Darky.profile` | Konsole profile: JetBrains Mono 11, blur, margins, 50k scrollback. The installer points it at the chosen theme's colour scheme. |
+| `themes/` | One Konsole colour scheme per theme: `DarkyBlue`, `DarkyOrange`, `DarkyPurple`, `DarkyGreen` (80% opaque background). |
 | `config.jsonc` | Fastfetch config used when you run `fastfetch` manually — logo is `auto`, so it shows your distro's logo. |
 | `config-startup.jsonc` | Fastfetch config used for the startup line — shows the Darky bat logo from `bat.txt`. |
 | `bat.txt` | The Darky bat logo (referenced by `config-startup.jsonc`). |
@@ -66,9 +71,44 @@ Darky/
 > Desktops: KDE Plasma, Hyprland, and anything else (terminal theming is desktop-independent)
 > Terminals: Konsole, Kitty, Alacritty, WezTerm, Foot, Ghostty, Xterm — every installed one gets themed
 > Shells: Zsh, Bash, Fish
+> Themes: Blue (default), Orange, Purple, Green — asked during install
 
 
-> Recommended:`chmod +x install.sh && ./install.sh`
+> Recommended:`chmod +x install.sh && ./install.sh` (it asks for a theme)  
+> Scripted: `./install.sh --theme purple` (or `--theme=orange`, `DARKY_THEME=green`)
+
+
+### Themes
+Four palettes with the same structure — same contrast, same semantics
+(red = errors, green = success, colour 4 = directories/accents) — only the
+colours differ:
+
+| Theme | Accent | Look |
+|-------|--------|------|
+| `blue` (default) | `#61afef` / Konsole `#94b9f8` | the original pastel blue |
+| `orange` | `#e95420` / `#eb6637` | Papirus deep orange, warm dark background |
+| `purple` | `#bd93f9` | Dracula palette (`#282a36` background) |
+| `green` | `#8fd694` / `#9dd6a4` | pastel green, same layout as blue |
+
+The installer asks before touching anything:
+
+```
+━━━ Terminal colour theme ━━━
+
+  1) Darky Blue    pastel blue  (default)
+  2) Darky Orange  Papirus deep orange
+  3) Darky Purple  Dracula purple
+  4) Darky Green   pastel green
+
+Pick a theme [1-4 / name, Enter = blue]:
+```
+
+One choice applies everywhere at once: the 16 ANSI colours of every installed
+terminal, the Konsole scheme + profile, and the Starship prompt palette (all
+four palettes live in `starship.toml`). To switch later, re-run the installer
+with another colour — it rewrites its own `darky.*` files and the Konsole
+profile, and never touches your other settings.
+A non-interactive run (no TTY) installs blue unless `--theme` is given.
 
 
 ### Manually install:
@@ -90,13 +130,13 @@ fc-cache -f ~/.local/share/fonts
 rm -rf /tmp/JetBrainsMono /tmp/JetBrainsMono.zip
 ```
 ### 2. Terminal Theme
-The installer detects which terminals you have and writes the Darky palette into
-each one's native config format. Nothing is overwritten — the theme goes into a
-separate `darky.*` file that gets included/imported by your main config.
+The installer detects which terminals you have and writes the selected palette
+into each one's native config format. Nothing is overwritten — the theme goes
+into a separate `darky.*` file that gets included/imported by your main config.
 
 | Terminal  | File written                       | How it is loaded             |
 |-----------|------------------------------------|------------------------------|
-| Konsole   | `~/.local/share/konsole/Darky*`    | profile (set as default)     |
+| Konsole   | `~/.local/share/konsole/Darky.profile` + `Darky<Theme>.colorscheme` | profile (set as default) |
 | Kitty     | `~/.config/kitty/darky.conf`       | `include darky.conf`         |
 | Alacritty | `~/.config/alacritty/darky.toml`   | entry in `import = [...]`    |
 | WezTerm   | `~/.config/wezterm/darky.lua`      | merged via `config_builder`  |
@@ -121,19 +161,24 @@ file, and only the include/import line is added to your main config:
 - **Ghostty**: works with both `~/.config/ghostty/config` and `config.ghostty`.
 
 ```bash
-# Konsole (manual)
-cp DarkySlate.colorscheme ~/.local/share/konsole
+# Konsole (manual, blue theme — swap the file name for another colour)
+cp themes/DarkyBlue.colorscheme ~/.local/share/konsole
 cp Darky.profile ~/.local/share/konsole
 # Settings → Manage Profiles → Import, then set Darky as default
 ```
 
-The palette used for every terminal (same values as `DarkySlate.colorscheme`):
+The palette used by the default `blue` theme (every terminal gets these values):
 
 ```
 background #1e2229   foreground #c8d0e0   cursor #5f87af
 normal   #1e2229 #e06c75 #98c379 #e5c07b #61afef #c678dd #56b6c2 #c8d0e0
 bright   #3b4048 #e06c75 #98c379 #e5c07b #61afef #c678dd #56b6c2 #ffffff
 ```
+
+The other themes keep the same layout and swap the accent (colour 4), cursor and
+background: `orange` uses `#e95420` on `#241b17`, `purple` is the Dracula palette
+on `#282a36`, `green` uses `#8fd694` on the same background as blue. The exact
+values live in `install.sh` (`set_theme_palette`) and `themes/*.colorscheme`.
 ### 3. Fastfetch
 ```bash
 # Install Fastfetch
@@ -169,6 +214,8 @@ sudo pacman -S starship
 
 # Copy config
 cp starship.toml ~/.config/starship.toml
+# All four palettes ship in the file; pick the active one (blue is default):
+# sed -i 's/^palette = .*/palette = "darky-purple"/' ~/.config/starship.toml
 
 # For Zsh
 echo 'eval "$(starship init zsh)"' >> ~/.zshrc

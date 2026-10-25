@@ -508,25 +508,190 @@ install_rounded_corners() {
 }
 
 # ─── Step 3: Terminal theme (any terminal) ────
-# Writes the Darky palette into whatever terminal is installed.
-# Palette values (must stay in sync with DarkySlate.colorscheme):
-#   bg #1e2229  fg #c8d0e0  accent #5f87af
-DARKY_BG="1e2229"
-DARKY_FG="c8d0e0"
-DARKY_CURSOR="5f87af"
-DARKY_PALETTE=(
-    "1e2229" "e06c75" "98c379" "e5c07b"
-    "61afef" "c678dd" "56b6c2" "c8d0e0"
-    "3b4048" "e06c75" "98c379" "e5c07b"
-    "61afef" "c678dd" "56b6c2" "ffffff"
-)
+# Four palettes with the same structure — only the colours differ. One palette
+# drives every terminal writer (the 16 ANSI colours), the Konsole scheme and
+# profile, and the Starship prompt palette.
+DARKY_THEME_ENV="${DARKY_THEME:-}"
+DARKY_THEME="blue"
+DARKY_THEME_CHOSEN=0
 
-# Konsole: profile + colorscheme files
+set_theme_palette() {
+    case "${1,,}" in
+        blue)
+            DARKY_THEME="blue"
+            DARKY_THEME_NAME="Darky Blue"
+            DARKY_SCHEME="DarkyBlue"
+            DARKY_CURSOR_PASTEL="94B9F8"
+            DARKY_BG="1e2229"
+            DARKY_FG="c8d0e0"
+            DARKY_CURSOR="5f87af"
+            DARKY_PALETTE=(
+                "1e2229" "e06c75" "98c379" "e5c07b"
+                "61afef" "c678dd" "56b6c2" "c8d0e0"
+                "3b4048" "e06c75" "98c379" "e5c07b"
+                "61afef" "c678dd" "56b6c2" "ffffff"
+            )
+            # fastfetch configs ship pre-coloured for Blue; nothing to rewrite.
+            DARKY_FF_APPLY=0
+            DARKY_FF_USER="216;227;243"
+            DARKY_FF_ACCENT="148;185;248"
+            DARKY_FF_DIM="107;127;160"
+            DARKY_FF_R0=197 DARKY_FF_G0=218 DARKY_FF_B0=255
+            DARKY_FF_R1=59 DARKY_FF_G1=90 DARKY_FF_B1=138
+            DARKY_FF_ACCENT_HEX="94B9F8"
+            ;;
+        orange)
+            # Accent is Papirus' deep orange (#e95420, highlight #eb6637),
+            # i.e. the same orange as the folder icons.
+            DARKY_THEME="orange"
+            DARKY_THEME_NAME="Darky Orange"
+            DARKY_SCHEME="DarkyOrange"
+            DARKY_CURSOR_PASTEL="F08C5F"
+            DARKY_BG="241b17"
+            DARKY_FG="e0d6cc"
+            DARKY_CURSOR="eb6637"
+            DARKY_PALETTE=(
+                "241b17" "e06c75" "98c379" "e5c07b"
+                "e95420" "c678dd" "56b6c2" "e0d6cc"
+                "3d302a" "e06c75" "98c379" "e5c07b"
+                "ff8a5c" "c678dd" "56b6c2" "fff4e8"
+            )
+            DARKY_FF_APPLY=1
+            DARKY_FF_USER="255;210;176"
+            DARKY_FF_ACCENT="240;147;95"
+            DARKY_FF_DIM="154;120;97"
+            DARKY_FF_R0=255 DARKY_FF_G0=210 DARKY_FF_B0=176
+            DARKY_FF_R1=138 DARKY_FF_G1=69 DARKY_FF_B1=32
+            DARKY_FF_ACCENT_HEX="F0935F"
+            ;;
+        purple)
+            # Dracula's official ANSI palette.
+            DARKY_THEME="purple"
+            DARKY_THEME_NAME="Darky Purple"
+            DARKY_SCHEME="DarkyPurple"
+            DARKY_CURSOR_PASTEL="BD93F9"
+            DARKY_BG="282a36"
+            DARKY_FG="f8f8f2"
+            DARKY_CURSOR="bd93f9"
+            DARKY_PALETTE=(
+                "21222c" "ff5555" "50fa7b" "f1fa8c"
+                "bd93f9" "ff79c6" "8be9fd" "f8f8f2"
+                "6272a4" "ff6e6e" "69ff94" "ffffa5"
+                "d6acff" "ff92df" "a4ffff" "ffffff"
+            )
+            DARKY_FF_APPLY=1
+            DARKY_FF_USER="233;214;255"
+            DARKY_FF_ACCENT="189;147;249"
+            DARKY_FF_DIM="98;114;164"
+            DARKY_FF_R0=233 DARKY_FF_G0=214 DARKY_FF_B0=255
+            DARKY_FF_R1=75 DARKY_FF_G1=55 DARKY_FF_B1=120
+            DARKY_FF_ACCENT_HEX="BD93F9"
+            ;;
+        green)
+            # Same pastel structure as Blue, with a pastel green accent.
+            DARKY_THEME="green"
+            DARKY_THEME_NAME="Darky Green"
+            DARKY_SCHEME="DarkyGreen"
+            DARKY_CURSOR_PASTEL="9DD6A4"
+            DARKY_BG="1e2229"
+            DARKY_FG="c8d0e0"
+            DARKY_CURSOR="8fd694"
+            DARKY_PALETTE=(
+                "1e2229" "e06c75" "98c379" "e5c07b"
+                "8fd694" "c678dd" "56b6c2" "c8d0e0"
+                "3b4048" "e06c75" "98c379" "e5c07b"
+                "b4e8b8" "c678dd" "56b6c2" "ffffff"
+            )
+            DARKY_FF_APPLY=1
+            DARKY_FF_USER="220;251;224"
+            DARKY_FF_ACCENT="157;214;164"
+            DARKY_FF_DIM="110;156;120"
+            DARKY_FF_R0=220 DARKY_FF_G0=251 DARKY_FF_B0=224
+            DARKY_FF_R1=62 DARKY_FF_G1=107 DARKY_FF_B1=71
+            DARKY_FF_ACCENT_HEX="9DD6A4"
+            ;;
+        *) return 1 ;;
+    esac
+    return 0
+}
+
+set_theme_palette "$DARKY_THEME" || true
+
+# `DARKY_THEME=orange ./install.sh` works too (handy for scripts/CI).
+if [ -n "$DARKY_THEME_ENV" ]; then
+    if set_theme_palette "$DARKY_THEME_ENV"; then
+        DARKY_THEME_CHOSEN=1
+    else
+        warn "Unknown DARKY_THEME '$DARKY_THEME_ENV' — ignoring it."
+    fi
+fi
+
+# Ask which colour to install. `--theme <name>` (or a non-interactive run)
+# skips this. Enter keeps Blue, the original Darky look.
+choose_theme() {
+    if [ "$DARKY_THEME_CHOSEN" -eq 1 ]; then
+        info "Theme: ${DARKY_THEME_NAME}"
+        return 0
+    fi
+    if [ ! -t 0 ]; then
+        info "Non-interactive run — using ${DARKY_THEME_NAME} (pass --theme to change)."
+        return 0
+    fi
+
+    echo ""
+    echo -e "${BOLD}━━━ Terminal colour theme ━━━${RESET}"
+    echo ""
+    echo "  1) Darky Blue    pastel blue  (default)"
+    echo "  2) Darky Orange  Papirus deep orange"
+    echo "  3) Darky Purple  Dracula purple"
+    echo "  4) Darky Green   pastel green"
+    echo ""
+
+    local ans
+    while true; do
+        read -rp "$(echo -e "${BOLD}Pick a theme [1-4 / name, Enter = blue]:${RESET} ")" ans
+        case "${ans,,}" in
+            ""|1|blue|b)     set_theme_palette blue   && break ;;
+            2|orange|o)      set_theme_palette orange && break ;;
+            3|purple|p)      set_theme_palette purple && break ;;
+            4|green|g)       set_theme_palette green  && break ;;
+            *) echo "Please enter 1-4, or blue / orange / purple / green." ;;
+        esac
+    done
+    success "Theme selected: ${DARKY_THEME_NAME}"
+}
+
+# Konsole: one colour scheme per theme + a profile that points at it.
+# The profile file keeps the name "Darky" so DefaultProfile and
+# `konsole --profile Darky` keep working when the colour changes.
 theme_konsole() {
-    mkdir -p "$HOME/.local/share/konsole"
-    cp "$TMP_DIR/DarkySlate.colorscheme" "$HOME/.local/share/konsole/"
-    cp "$TMP_DIR/Darky.profile"          "$HOME/.local/share/konsole/"
-    success "Konsole: theme files copied."
+    local dir="$HOME/.local/share/konsole"
+    mkdir -p "$dir"
+
+    # Drop schemes from an earlier run with a different colour (we own these).
+    rm -f "$dir"/Darky*.colorscheme 2>/dev/null || true
+
+    local scheme="$TMP_DIR/themes/${DARKY_SCHEME}.colorscheme"
+    if [ -f "$scheme" ]; then
+        cp "$scheme" "$dir/" 2>/dev/null \
+            && success "Konsole: ${DARKY_THEME_NAME} colour scheme installed." \
+            || warn "Konsole: could not copy ${DARKY_SCHEME}.colorscheme."
+    else
+        warn "Konsole: themes/${DARKY_SCHEME}.colorscheme not found in the repo."
+    fi
+
+    if [ -f "$TMP_DIR/Darky.profile" ]; then
+        local tmp="$dir/Darky.profile.darky-tmp"
+        if sed -e "s/^ColorScheme=.*/ColorScheme=${DARKY_SCHEME}/" \
+               -e "s/^CustomCursorColor=.*/CustomCursorColor=#${DARKY_CURSOR_PASTEL}/" \
+               "$TMP_DIR/Darky.profile" > "$tmp" 2>/dev/null \
+           && mv "$tmp" "$dir/Darky.profile"; then
+            success "Konsole: profile set to ${DARKY_THEME_NAME}."
+        else
+            rm -f "$tmp" 2>/dev/null || true
+            warn "Konsole: could not write Darky.profile."
+        fi
+    fi
 }
 
 # Kitty: one .conf with colors + font
@@ -540,7 +705,7 @@ theme_kitty() {
         echo "background            #${DARKY_BG}"
         echo "foreground            #${DARKY_FG}"
         echo "cursor                #${DARKY_CURSOR}"
-        echo "selection_background  #3b4048"
+        echo "selection_background  #${DARKY_PALETTE[8]}"
         echo "selection_foreground  #${DARKY_FG}"
         local i
         for i in "${!DARKY_PALETTE[@]}"; do
@@ -875,10 +1040,21 @@ theme_foot() {
 # Xterm: Xresources
 theme_xterm() {
     local file="$HOME/.Xresources"
-    if grep -qF "Darky theme" "$file" 2>/dev/null; then
-        success "Xterm: Darky colors already present in ~/.Xresources."
-        return
+    touch "$file" 2>/dev/null || { warn "Xterm: cannot write $file."; return 0; }
+
+    # Drop a block left by an earlier run (possibly another theme colour).
+    # The block is a marker line followed by XTerm* settings; anything the user
+    # wrote after it is preserved.
+    if grep -qF "! Darky theme" "$file" 2>/dev/null; then
+        awk '
+            $0 == "! Darky theme — generated by Darky installer" { drop = 1; next }
+            drop && /^XTerm\*/ { next }
+            { drop = 0; print }
+        ' "$file" > "$file.darky-tmp" 2>/dev/null \
+            && mv "$file.darky-tmp" "$file" \
+            || rm -f "$file.darky-tmp" 2>/dev/null || true
     fi
+
     {
         echo "! Darky theme — generated by Darky installer"
         echo "XTerm*background: #${DARKY_BG}"
@@ -888,7 +1064,7 @@ theme_xterm() {
         echo "XTerm*faceSize: 11"
     } >> "$file"
     command -v xrdb &>/dev/null && xrdb -merge "$file" 2>/dev/null || true
-    success "Xterm: theme appended to ~/.Xresources."
+    success "Xterm: ${DARKY_THEME_NAME} colours written to ~/.Xresources."
 }
 
 # Fish needs its own init line (not eval "$(...)"), so keep it in one place:
@@ -943,7 +1119,10 @@ install_terminal_theme() {
     fi
 
     info "Terminals found: ${TERMINALS[*]}"
-    if ! ask "  Apply the Darky theme to all of them?"; then
+    if [ "$DARKY_THEME_CHOSEN" -eq 1 ]; then
+        # --theme / DARKY_THEME already is the answer to "apply it?".
+        info "Applying ${DARKY_THEME_NAME} (theme was chosen explicitly)."
+    elif ! ask "  Apply the ${DARKY_THEME_NAME} theme to all of them?"; then
         warn "Skipped terminal theme."
         return
     fi
@@ -1036,11 +1215,15 @@ install_fastfetch() {
                 warn "Source file ${f} not found in the repo — skipped."
             fi
         done
-        success "fastfetch configs copied."
+        success "fastfetch configs copied (${DARKY_THEME_NAME})."
 
         # Some dotfile setups (ml4w/Hyprland) run bare `fastfetch` on shell start,
         # which reads config.jsonc — not config-startup.jsonc. Point it at our logo.
         run_step "fastfetch logo" apply_fastfetch_logo
+
+        # The shipped configs are pre-coloured for Blue; other themes rewrite the
+        # colour tokens in place so fastfetch matches the terminal.
+        run_step "fastfetch theme" apply_fastfetch_theme
 
         STARTUP_LINE="fastfetch --config $HOME/.config/fastfetch/config-startup.jsonc"
 
@@ -1098,6 +1281,65 @@ apply_fastfetch_logo() {
             warn "Could not find a logo block in config.jsonc. Skipping logo override."
         fi
     fi
+}
+
+# ─── Fastfetch theme: match the config colours to the chosen palette ───
+# The repo's configs are pre-coloured for Blue, so Blue needs no rewrite. For
+# every other theme the colour tokens are swapped in place: the 10-step key
+# ramp (256-colour codes 75..65), the bright cyan/blue escapes of the title
+# line, the separator colour and the logo colour in config-startup.jsonc.
+# Running this again on a fresh copy is safe — the tokens are rewritten from
+# scratch each install, so switching theme never stacks up.
+apply_fastfetch_theme() {
+    if [ "${DARKY_FF_APPLY:-0}" != "1" ]; then
+        info "Fastfetch: configs already ship the ${DARKY_THEME_NAME} colours."
+        return 0
+    fi
+
+    local cfg="$HOME/.config/fastfetch/config.jsonc"
+    local startup="$HOME/.config/fastfetch/config-startup.jsonc"
+
+    if [ ! -f "$cfg" ]; then
+        warn "Fastfetch: config.jsonc not found — skipping theme."
+        return 0
+    fi
+
+    # Module keys fade from the light tone (R0/G0/B0) into the dim tone
+    # (R1/G1/B1) over 10 steps, same light→dark direction as the Blue config.
+    local codes=(75 74 73 72 71 69 68 67 66 65)
+    local i r g b
+    local -a args=()
+    for i in "${!codes[@]}"; do
+        r=$(( DARKY_FF_R0 + (DARKY_FF_R1 - DARKY_FF_R0) * i / 9 ))
+        g=$(( DARKY_FF_G0 + (DARKY_FF_G1 - DARKY_FF_G0) * i / 9 ))
+        b=$(( DARKY_FF_B0 + (DARKY_FF_B1 - DARKY_FF_B0) * i / 9 ))
+        args+=(-e "s/38;5;${codes[$i]}m/38;2;${r};${g};${b}m/g")
+    done
+
+    # Title line: bright cyan is the user name, bright blue the host name.
+    args+=(-e "s/\[96m/[38;2;${DARKY_FF_USER}m/g")
+    args+=(-e "s/\[94m/[38;2;${DARKY_FF_ACCENT}m/g")
+    # The "@" separator and display.color.separator.
+    args+=(-e "s/38;5;61m/38;2;${DARKY_FF_DIM}m/g")
+    # display.color.title (named colour -> hex, so any theme accent works).
+    args+=(-e "s/\"title\":[[:space:]]*\"cyan\"/\"title\": \"#${DARKY_FF_ACCENT_HEX}\"/")
+
+    if sed -i "${args[@]}" "$cfg" 2>/dev/null; then
+        success "Fastfetch: config.jsonc recoloured for ${DARKY_THEME_NAME}."
+    else
+        warn "Fastfetch: could not recolour config.jsonc."
+        return 0
+    fi
+
+    if [ -f "$startup" ]; then
+        # Logo colour of the startup config (the bat is drawn in one colour).
+        if sed -i -E "s/#5B9BD5/#${DARKY_FF_ACCENT_HEX}/g" "$startup" 2>/dev/null; then
+            success "Fastfetch: startup logo colour set to ${DARKY_THEME_NAME}."
+        else
+            warn "Fastfetch: could not recolour config-startup.jsonc."
+        fi
+    fi
+    return 0
 }
 
 # ─── Step 5: Starship ─────────────────────────
@@ -1196,9 +1438,18 @@ install_starship() {
 
     if ask "  Copy starship.toml to ~/.config/starship.toml?"; then
         if [ -f "$TMP_DIR/starship.toml" ]; then
-            cp "$TMP_DIR/starship.toml" ~/.config/starship.toml 2>/dev/null \
-                && success "starship.toml copied." \
-                || warn "Could not copy starship.toml."
+            mkdir -p "$HOME/.config"
+            # The file ships all four palettes; only the active one is selected
+            # here, so switching theme later is just a re-run of the installer.
+            local st_tmp="$HOME/.config/starship.toml.darky-tmp"
+            if sed "s/^palette = .*/palette = \"darky-${DARKY_THEME}\"/" \
+                   "$TMP_DIR/starship.toml" > "$st_tmp" 2>/dev/null \
+               && mv "$st_tmp" "$HOME/.config/starship.toml"; then
+                success "starship.toml copied (${DARKY_THEME_NAME} palette)."
+            else
+                rm -f "$st_tmp" 2>/dev/null || true
+                warn "Could not copy starship.toml."
+            fi
         else
             warn "starship.toml not found in the repo — skipped."
         fi
@@ -1272,7 +1523,7 @@ apply_konsole_profile() {
         $KWRITE --file "$konsolerc" \
             --group "Desktop Entry" \
             --key "DefaultProfile" "${profile_name}.profile" 2>/dev/null || true
-        success "Darky set as default Konsole profile."
+        success "${DARKY_THEME_NAME} set as default Konsole profile."
     else
         mkdir -p "$(dirname "$konsolerc")"
         if [ -f "$konsolerc" ]; then
@@ -1286,7 +1537,7 @@ apply_konsole_profile() {
         else
             echo -e "[Desktop Entry]\nDefaultProfile=${profile_name}.profile" > "$konsolerc"
         fi
-        success "Darky set as default Konsole profile (manual edit)."
+        success "${DARKY_THEME_NAME} set as default Konsole profile (manual edit)."
     fi
 }
 
@@ -1777,6 +2028,54 @@ relaunch_terminal() {
     fi
 }
 
+# ─── Command line ─────────────────────────────
+usage() {
+    cat <<'EOF'
+Darky installer
+
+Usage: ./install.sh [options]
+
+Options:
+  --theme <name>   Terminal colour theme: blue (default), orange, purple, green
+  -h, --help       Show this help and exit
+
+Examples:
+  ./install.sh                       # asks for a theme
+  ./install.sh --theme purple        # installs the Dracula purple theme
+  ./install.sh --theme=orange        # same, other spelling
+
+Without --theme, the installer asks. A non-interactive run (no TTY, e.g. in a
+script) installs the default blue theme instead of waiting for input.
+EOF
+}
+
+parse_args() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --theme=*)
+                set_theme_palette "${1#*=}" \
+                    || error "Unknown theme '${1#*=}'. Use: blue, orange, purple, green."
+                DARKY_THEME_CHOSEN=1
+                ;;
+            --theme)
+                shift
+                [ $# -gt 0 ] || error "--theme needs a value: blue, orange, purple, green."
+                set_theme_palette "$1" \
+                    || error "Unknown theme '$1'. Use: blue, orange, purple, green."
+                DARKY_THEME_CHOSEN=1
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                warn "Unknown option: $1 (see --help)"
+                ;;
+        esac
+        shift
+    done
+}
+
 # ─── Main ─────────────────────────────────────
 main() {
     echo ""
@@ -1791,6 +2090,9 @@ main() {
     check_git
     clone_repo
 
+    # Needs the repo (themes/) but nothing else, so it runs before any writes.
+    choose_theme
+
     # Everything below is optional: a failing step warns and the run continues.
     run_step "shell"            install_shell            # Step 0
     run_step "font"             install_font             # Step 1
@@ -1802,7 +2104,7 @@ main() {
     cleanup
 
     echo ""
-    echo -e "${GREEN}${BOLD}✔ Installation complete!${RESET}"
+    echo -e "${GREEN}${BOLD}✔ Installation complete!${RESET}  (${DARKY_THEME_NAME} theme)"
     echo ""
 
     run_step "konsole profile"  apply_konsole_profile
@@ -1811,10 +2113,11 @@ main() {
     run_step "shell default"    apply_shell_default   # chsh + ml4w terminal launcher + rc wiring + migration
 
     echo ""
-    info "Relaunching terminal with Darky theme in 3 seconds..."
+    info "Relaunching terminal with ${DARKY_THEME_NAME} in 3 seconds..."
     sleep 3
     run_step "terminal relaunch" relaunch_terminal
     return 0
 }
 
-main "$@"
+parse_args "$@"
+main

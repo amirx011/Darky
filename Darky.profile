@@ -1,5 +1,5 @@
 [Appearance]
-ColorScheme=DarkySlate
+ColorScheme=DarkyBlue
 Font=JetBrains Mono,11,-1,5,400,0,0,0,0,0,0,0,0,0,0,1
 LineSpacing=2
 TabColor=invalid

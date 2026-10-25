@@ -163,8 +163,8 @@ remove_terminal_theme() {
     local found=0
 
     # Detect what the installer actually wrote
-    [ -f "$konsole_dir/DarkySlate.colorscheme" ] && found=1
-    [ -f "$konsole_dir/Darky.profile" ]           && found=1
+    [ -f "$konsole_dir/Darky.profile" ] && found=1
+    ls "$konsole_dir"/Darky*.colorscheme >/dev/null 2>&1 && found=1
     [ -f "$HOME/.config/kitty/darky.conf" ]       && found=1
     [ -f "$HOME/.config/alacritty/darky.toml" ]   && found=1
     [ -f "$HOME/.config/wezterm/darky.lua" ]      && found=1
@@ -183,9 +183,9 @@ remove_terminal_theme() {
         return 0
     fi
 
-    # Konsole
-    if [ -f "$konsole_dir/DarkySlate.colorscheme" ] || [ -f "$konsole_dir/Darky.profile" ]; then
-        rm -f "$konsole_dir/DarkySlate.colorscheme" "$konsole_dir/Darky.profile" 2>/dev/null || true
+    # Konsole — every Darky colour scheme (blue/orange/purple/green) + profile
+    if [ -f "$konsole_dir/Darky.profile" ] || ls "$konsole_dir"/Darky*.colorscheme >/dev/null 2>&1; then
+        rm -f "$konsole_dir/Darky.profile" "$konsole_dir"/Darky*.colorscheme 2>/dev/null || true
         success "Konsole: theme files removed."
     fi
 

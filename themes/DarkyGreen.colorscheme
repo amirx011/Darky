@@ -1,5 +1,5 @@
 [General]
-Description=Darky Slate
+Description=Darky Green
 Opacity=0.80
 Wallpaper=
 
@@ -61,17 +61,17 @@ Color=180,155,100
 [Color3Intense]
 Color=245,220,165
 
-; --- Blue (primary accent - slightly richer pastel) ---
+; --- Green (primary accent - pastel green) ---
 [Color4]
-Color=148,185,248
+Color=157,214,164
 
 [Color4Faint]
-Color=100,140,205
+Color=110,165,118
 
 [Color4Intense]
-Color=180,208,255
+Color=190,235,196
 
-; --- Magenta (secondary, subtle purple-blue) ---
+; --- Magenta (secondary, subtle) ---
 [Color5]
 Color=170,160,228
 
@@ -81,7 +81,7 @@ Color=125,118,180
 [Color5Intense]
 Color=198,190,248
 
-; --- Cyan (links, highlights - slightly deeper) ---
+; --- Cyan (links, highlights) ---
 [Color6]
 Color=118,202,222
 
@@ -102,11 +102,11 @@ Color=175,190,215
 Color=243,247,253
 
 [Cursor]
-Color=148,185,248
+Color=157,214,164
 UseCustomColor=true
 
 [Selection]
-Background=38,60,92
+Background=42,70,50
 Foreground=243,247,253
 
 [Blur]

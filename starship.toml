@@ -25,42 +25,81 @@ $character"""
 
 add_newline = true
 
-palette = "darky"
+palette = "darky-blue"
 
-[palettes.darky]
+# ─── Prompt palettes ──────────────────────────
+# install.sh rewrites the `palette` line above to the theme you picked, so the
+# prompt always matches the terminal. Every style below uses these names.
+[palettes.darky-blue]
 primary    = "#A8C7FA"
 secondary  = "#C5DAFF"
 highlight  = "#D7E7FF"
 text       = "#F3F7FD"
 muted      = "#D8E3F3"
 bg         = "#151C24"
-accent_red = "#F08282"
-accent_grn = "#8CD2A0"
-accent_yel = "#E6C88C"
+danger     = "#F08282"
+success    = "#8CD2A0"
+warning    = "#E6C88C"
 dim        = "#6B7FA0"
 
+[palettes.darky-orange]
+primary    = "#F0935F"
+secondary  = "#FFB489"
+highlight  = "#FFD2B0"
+text       = "#FAF3EC"
+muted      = "#E8DCD0"
+bg         = "#1A1310"
+danger     = "#F08282"
+success    = "#8CD2A0"
+warning    = "#E6C88C"
+dim        = "#9A7861"
+
+[palettes.darky-purple]
+primary    = "#BD93F9"
+secondary  = "#D6ACFF"
+highlight  = "#E9D6FF"
+text       = "#F8F8F2"
+muted      = "#D7D7D0"
+bg         = "#21222C"
+danger     = "#FF6E6E"
+success    = "#69FF94"
+warning    = "#FFFFA5"
+dim        = "#6272A4"
+
+[palettes.darky-green]
+primary    = "#9DD6A4"
+secondary  = "#C5F0C8"
+highlight  = "#DCFBE0"
+text       = "#F3FDF4"
+muted      = "#D8EDDA"
+bg         = "#151C24"
+danger     = "#F08282"
+success    = "#8CD2A0"
+warning    = "#E6C88C"
+dim        = "#6E9C78"
+
 [character]
-success_symbol = "[❯](bold #A8C7FA)"
-error_symbol   = "[❯](bold #F08282)"
-vimcmd_symbol  = "[❮](bold #C5DAFF)"
+success_symbol = "[❯](bold fg:primary)"
+error_symbol   = "[❯](bold fg:danger)"
+vimcmd_symbol  = "[❮](bold fg:secondary)"
 
 [directory]
-style                     = "bold #C5DAFF"
+style                     = "bold fg:secondary"
 truncation_length         = 3
 truncate_to_repo          = true
 read_only                 = " ro"
-read_only_style           = "#F08282"
-before_repo_root_style    = "#6B7FA0"
-repo_root_style           = "bold #D7E7FF"
+read_only_style           = "fg:danger"
+before_repo_root_style    = "fg:dim"
+repo_root_style           = "bold fg:highlight"
 format                    = "[$path]($style)[$read_only]($read_only_style) "
 
 [git_branch]
 symbol    = ""
-style     = "#6B7FA0"
+style     = "fg:dim"
 format    = "[$symbol$branch]($style) "
 
 [git_status]
-style     = "#F08282"
+style     = "fg:danger"
 format    = "([$all_status$ahead_behind]($style) )"
 ahead     = "⇡${count}"
 behind    = "⇣${count}"
@@ -75,35 +114,35 @@ symbol = " "
 
 [cmd_duration]
 min_time          = 2000
-style             = "#6B7FA0"
+style             = "fg:dim"
 format            = "[$duration]($style) "
 show_milliseconds = false
 
 [time]
 disabled      = false
-style         = "#6B7FA0"
+style         = "fg:dim"
 format        = "[$time]($style)"
 time_format   = "%H:%M"
 use_12hr      = false
 
 [python]
 symbol = "py "
-style  = "#8CD2A0"
+style  = "fg:success"
 format = "[$symbol($version)]($style) "
 
 [rust]
 symbol = "rs "
-style  = "#E6C88C"
+style  = "fg:warning"
 format = "[$symbol($version)]($style) "
 
 [golang]
 symbol = "go "
-style  = "#8CD2A0"
+style  = "fg:success"
 format = "[$symbol($version)]($style) "
 
 [nodejs]
 symbol = "js "
-style  = "#E6C88C"
+style  = "fg:warning"
 format = "[$symbol($version)]($style) "
 
 # ─────────────────────────────────────────────────────
