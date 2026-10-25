@@ -5,10 +5,25 @@
 # ║  Supports: Arch | Fedora | RHEL-based        ║
 # ╚══════════════════════════════════════════════╝
 
-set -e
+# NOTE: `set -e` is deliberately NOT used.
+# A single failing optional step (package not in the repo, no network, mirror
+# down, permission denied, missing tool...) must never abort the whole
+# installation — every step reports a warning and the installer moves on.
+# The only hard stops are the explicit `error` calls in detect_distro and
+# check_git, where nothing else could possibly work.
 
 REPO_URL="https://github.com/amirx011/Darky"
 TMP_DIR="/tmp/darky-install"
+
+# ─── Shared terminal state module ─────────────
+# Saves the user's pre-Darky terminal setup so uninstall.sh can put it back.
+# The file lives next to this script (repo root) and is optional: if it is
+# missing, the installer still works, only the restore step is skipped.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/darky-terminal-state.sh" ]; then
+    # shellcheck source=darky-terminal-state.sh
+    . "$SCRIPT_DIR/darky-terminal-state.sh"
+fi
 
 # ─── Colors ───────────────────────────────────
 RED='\033[0;31m'
@@ -22,6 +37,25 @@ info()    { echo -e "${CYAN}[INFO]${RESET}  $*"; }
 success() { echo -e "${GREEN}[OK]${RESET}    $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
 error()   { echo -e "${RED}[ERROR]${RESET} $*"; exit 1; }
+
+# ─── Failure-tolerant helpers ─────────────────
+# Run an optional step: report and continue, never abort the installer.
+run_step() {
+    local name="$1"; shift
+    if ! "$@"; then
+        warn "Step '${name}' did not finish cleanly — continuing with the rest."
+    fi
+    return 0
+}
+
+# Run an optional command: warn instead of dying.
+try() {
+    if ! "$@"; then
+        warn "Command failed (ignored): $*"
+        return 1
+    fi
+    return 0
+}
 
 ask() {
     while true; do
@@ -87,13 +121,35 @@ install_pkg_silent() {
             success "${pkg} installed."
             return 0
         fi
+        warn "Could not install ${pkg}."
         return 1
     elif [[ "$PKG_MANAGER" == "dnf" ]]; then
-        sudo dnf install -y "$pkg"
+        if sudo dnf install -y "$pkg"; then
+            success "${pkg} installed."
+            return 0
+        fi
+        warn "Could not install ${pkg} from the enabled repos. Refreshing metadata..."
+        sudo dnf makecache --refresh -y >/dev/null 2>&1 || true
+        if sudo dnf install -y "$pkg"; then
+            success "${pkg} installed."
+            return 0
+        fi
+        warn "Could not install ${pkg}."
+        return 1
     else
-        sudo apt install -y "$pkg"
+        if sudo apt install -y "$pkg"; then
+            success "${pkg} installed."
+            return 0
+        fi
+        warn "Could not install ${pkg}. Refreshing package lists..."
+        sudo apt update -y || true
+        if sudo apt install -y "$pkg"; then
+            success "${pkg} installed."
+            return 0
+        fi
+        warn "Could not install ${pkg}."
+        return 1
     fi
-    success "${pkg} installed."
 }
 
 # ─── Install a package with confirmation ──────
@@ -101,7 +157,7 @@ install_pkg() {
     local pkg="$1"
     local display="${2:-$1}"
     if ask "  Install package '${display}'?"; then
-        install_pkg_silent "$pkg"
+        install_pkg_silent "$pkg" || warn "${display} was not installed — continuing."
     else
         warn "Skipped installation of ${display}."
     fi
@@ -112,7 +168,10 @@ check_git() {
     if ! command -v git &>/dev/null; then
         warn "git not found."
         if ask "  Install git?"; then
-            install_pkg_silent "git"
+            # git is the one thing the installer cannot work without.
+            if ! install_pkg_silent "git"; then
+                error "git could not be installed, but it is required to fetch the Darky files."
+            fi
         else
             error "git is required to continue."
         fi
@@ -130,7 +189,9 @@ clone_repo() {
 
     info "Cloning Darky repository..."
     rm -rf "$TMP_DIR"
-    git clone --depth=1 "$REPO_URL" "$TMP_DIR"
+    if ! git clone --depth=1 "$REPO_URL" "$TMP_DIR"; then
+        error "Could not clone the Darky repository. Check your connection and run the installer again."
+    fi
     success "Repository cloned."
 }
 
@@ -210,7 +271,14 @@ install_shell() {
     if [[ "$CHOSEN_SHELL" == "zsh" ]]; then
         if ! command -v zsh &>/dev/null; then
             info "zsh is not installed. Installing..."
-            install_pkg_silent "zsh"
+            if ! install_pkg_silent "zsh"; then
+                warn "zsh could not be installed — falling back to bash."
+                CHOSEN_SHELL="bash"
+                SHELL_RC="$HOME/.bashrc"
+                [ -f "$SHELL_RC" ] || touch "$SHELL_RC"
+                export CHOSEN_SHELL SHELL_RC
+                return 0
+            fi
         else
             success "zsh is already installed."
         fi
@@ -219,9 +287,13 @@ install_shell() {
             success "zsh is already your default shell."
         else
             ZSH_PATH="$(command -v zsh)"
-            grep -qF "$ZSH_PATH" /etc/shells || echo "$ZSH_PATH" | sudo tee -a /etc/shells > /dev/null
-            sudo chsh -s "$ZSH_PATH" "$USER"
-            success "Default shell changed to zsh. Takes effect on next login."
+            grep -qF "$ZSH_PATH" /etc/shells 2>/dev/null \
+                || echo "$ZSH_PATH" | sudo tee -a /etc/shells > /dev/null 2>&1 || true
+            if sudo chsh -s "$ZSH_PATH" "$USER" 2>/dev/null; then
+                success "Default shell changed to zsh. Takes effect on next login."
+            else
+                warn "chsh failed. Run manually: chsh -s $ZSH_PATH"
+            fi
         fi
 
         [ -f "$HOME/.zshrc" ] || touch "$HOME/.zshrc"
@@ -230,7 +302,14 @@ install_shell() {
     elif [[ "$CHOSEN_SHELL" == "fish" ]]; then
         if ! command -v fish &>/dev/null; then
             info "fish is not installed. Installing..."
-            install_pkg_silent "fish"
+            if ! install_pkg_silent "fish"; then
+                warn "fish could not be installed — falling back to bash."
+                CHOSEN_SHELL="bash"
+                SHELL_RC="$HOME/.bashrc"
+                [ -f "$SHELL_RC" ] || touch "$SHELL_RC"
+                export CHOSEN_SHELL SHELL_RC
+                return 0
+            fi
         else
             success "fish is already installed."
         fi
@@ -239,9 +318,13 @@ install_shell() {
         if [[ "$SHELL" == *"fish"* ]]; then
             success "fish is already your default shell."
         else
-            grep -qF "$FISH_PATH" /etc/shells || echo "$FISH_PATH" | sudo tee -a /etc/shells > /dev/null
-            sudo chsh -s "$FISH_PATH" "$USER"
-            success "Default shell changed to fish. Takes effect on next login."
+            grep -qF "$FISH_PATH" /etc/shells 2>/dev/null \
+                || echo "$FISH_PATH" | sudo tee -a /etc/shells > /dev/null 2>&1 || true
+            if sudo chsh -s "$FISH_PATH" "$USER" 2>/dev/null; then
+                success "Default shell changed to fish. Takes effect on next login."
+            else
+                warn "chsh failed. Run manually: chsh -s $FISH_PATH"
+            fi
         fi
 
         mkdir -p "$HOME/.config/fish"
@@ -250,16 +333,20 @@ install_shell() {
 
     else
         if ! command -v bash &>/dev/null; then
-            install_pkg_silent "bash"
+            install_pkg_silent "bash" || warn "bash could not be installed — continuing."
         else
             success "bash is already installed."
         fi
 
         BASH_PATH="$(command -v bash)"
         if [[ "$SHELL" != *"bash"* ]]; then
-            grep -qF "$BASH_PATH" /etc/shells || echo "$BASH_PATH" | sudo tee -a /etc/shells > /dev/null
-            sudo chsh -s "$BASH_PATH" "$USER"
-            success "Default shell changed to bash. Takes effect on next login."
+            grep -qF "$BASH_PATH" /etc/shells 2>/dev/null \
+                || echo "$BASH_PATH" | sudo tee -a /etc/shells > /dev/null 2>&1 || true
+            if sudo chsh -s "$BASH_PATH" "$USER" 2>/dev/null; then
+                success "Default shell changed to bash. Takes effect on next login."
+            else
+                warn "chsh failed. Run manually: chsh -s $BASH_PATH"
+            fi
         else
             success "bash is already your default shell."
         fi
@@ -313,9 +400,14 @@ install_font_from_zip() {
     fi
 
     rm -rf /tmp/JetBrainsMono
-    unzip -oq /tmp/JetBrainsMono.zip -d /tmp/JetBrainsMono
+    if ! unzip -oq /tmp/JetBrainsMono.zip -d /tmp/JetBrainsMono; then
+        warn "Could not extract the font archive. Skipping JetBrains Mono."
+        rm -rf /tmp/JetBrainsMono /tmp/JetBrainsMono.zip
+        return 1
+    fi
     mkdir -p "$HOME/.local/share/fonts/JetBrainsMono"
-    cp /tmp/JetBrainsMono/fonts/ttf/*.ttf "$HOME/.local/share/fonts/JetBrainsMono/" 2>/dev/null || true
+    cp /tmp/JetBrainsMono/fonts/ttf/*.ttf "$HOME/.local/share/fonts/JetBrainsMono/" 2>/dev/null \
+        || warn "Could not copy the JetBrains Mono font files."
     if command -v fc-cache &>/dev/null; then
         fc-cache -f "$HOME/.local/share/fonts" &>/dev/null || true
     fi
@@ -337,23 +429,34 @@ install_font() {
         if ask "  Install JetBrains Mono (ttf-jetbrains-mono)?"; then
             if ! install_pkg_silent "ttf-jetbrains-mono"; then
                 warn "pacman install failed. Falling back to direct download..."
-                install_font_from_zip
+                install_font_from_zip || warn "JetBrains Mono could not be installed. Continuing."
             fi
         else
             warn "Skipped JetBrains Mono."
         fi
     elif [[ "$PKG_MANAGER" == "apt" ]]; then
         if ask "  Install JetBrains Mono font?"; then
-            install_font_from_zip
+            install_font_from_zip || warn "JetBrains Mono could not be installed. Continuing."
         else
             warn "Skipped JetBrains Mono."
         fi
     else
-        install_pkg "jetbrains-mono-fonts-all" "JetBrains Mono (Fedora/RHEL)"
+        if ask "  Install JetBrains Mono (jetbrains-mono-fonts-all)?"; then
+            if ! install_pkg_silent "jetbrains-mono-fonts-all"; then
+                warn "Package not available. Falling back to direct download..."
+                install_font_from_zip || warn "JetBrains Mono could not be installed. Continuing."
+            fi
+        else
+            warn "Skipped JetBrains Mono."
+        fi
     fi
 }
 
-# ─── Step 2: KDE Rounded Corners ──────────────
+# ─── Step 2: KDE Rounded Corners (optional) ───
+# The Fedora COPR route was dropped on purpose: it needs an extra repository
+# that is often unavailable, and the window rounding it provided is not worth
+# risking the rest of the install for. On KDE the installer now just turns on
+# the Breeze rounding that ships with Plasma, and never fails the run.
 install_rounded_corners() {
     echo ""
     echo -e "${BOLD}━━━ Step 2: Rounded Corners ━━━${RESET}"
@@ -366,52 +469,26 @@ install_rounded_corners() {
     fi
 
     if [[ "$DESKTOP" != "kde" ]]; then
-        warn "Rounded corners are only configured for KDE and Hyprland. Skipping."
+        info "Rounded corners are only configured for KDE and Hyprland. Skipping."
         return 0
     fi
 
-    if [[ "$PKG_MANAGER" != "dnf" ]]; then
-        warn "KDE Rounded Corners via COPR is only supported on Fedora/RHEL. Skipping."
-        warn "On Arch, use the AUR package: kwin-effect-rounded-corners-git"
+    if ! ask "  Enable rounded window corners?"; then
+        warn "Skipped rounded corners."
         return 0
     fi
 
-    if ! ask "  Enable rounded window corners? (Squircleness=0.60)"; then
-        warn "Skipped KDE Rounded Corners."
-        return
-    fi
-
-    # Every command below is guarded: a COPR/network/repo failure must never
-    # abort the whole installer (works even with `set -e`).
-    info "Enabling COPR: matinlotfali/KDE-Rounded-Corners..."
-
-    if ! sudo dnf install -y dnf-plugins-core; then
-        warn "'dnf-plugins-core' could not be installed — COPR support may be missing."
-    fi
-
-    if ! sudo dnf copr enable -y matinlotfali/KDE-Rounded-Corners; then
-        warn "Could not enable the COPR repository (offline, COPR down or unsupported)."
-        warn "Skipping KDE Rounded Corners and continuing the installation."
-        return 0
-    fi
-
-    if ! sudo dnf install -y kwin-effect-roundcorners; then
-        warn "Could not install 'kwin-effect-roundcorners' from the COPR repo."
-        warn "Skipping KDE Rounded Corners and continuing the installation."
-        return 0
-    fi
-
-    success "kwin-effect-roundcorners installed."
-
+    # Nothing is installed here — only the built-in KWin/Breeze settings are
+    # touched, and every write is allowed to fail without stopping the run.
     detect_kwrite
     if [ -z "$KWRITE" ]; then
-        warn "kwriteconfig not found. Skipping KWin config. Set Squircleness manually."
-    else
-        $KWRITE --file kwinrc --group Plugins --key roundcornersEnabled "true" || true
-        $KWRITE --file kwinrc --group Effect-RoundedCorners --key Squircleness "0.60" || true
-        $KWRITE --file breezerc --group "Windeco Exception 0" --key OutlineIntensity "OutlineOff" || true
-        success "Squircleness set to 0.60."
+        warn "kwriteconfig not found. Skipping KWin config."
+        return 0
     fi
+
+    $KWRITE --file kwinrc --group Effect-Breeze --key RoundedCorners "true" 2>/dev/null || true
+    $KWRITE --file breezerc --group "Windeco Exception 0" --key OutlineIntensity "OutlineOff" 2>/dev/null || true
+    success "Rounded corners enabled (Breeze built-in)."
 
     if command -v qdbus6 &>/dev/null; then
         qdbus6 org.kde.KWin /KWin reconfigure 2>/dev/null \
@@ -424,6 +501,7 @@ install_rounded_corners() {
     else
         warn "qdbus not found. Changes will apply after next login."
     fi
+    return 0
 }
 
 # ─── Step 3: Terminal theme (any terminal) ────
@@ -667,15 +745,23 @@ install_terminal_theme() {
         return
     fi
 
+    # Snapshot the current terminal setup BEFORE touching anything, so
+    # uninstall.sh can put the user's previous terminal back.
+    if declare -F darky_save_terminal_state >/dev/null; then
+        run_step "terminal state backup" darky_save_terminal_state "${TERMINALS[@]}"
+    else
+        warn "darky-terminal-state.sh not found — previous terminal will not be restored on uninstall."
+    fi
+
     local t
     for t in "${TERMINALS[@]}"; do
         case "$t" in
-            konsole)   theme_konsole ;;
-            kitty)     theme_kitty ;;
-            alacritty) theme_alacritty ;;
-            wezterm)   theme_wezterm ;;
-            foot)      theme_foot ;;
-            xterm)     theme_xterm ;;
+            konsole)   run_step "konsole theme"   theme_konsole ;;
+            kitty)     run_step "kitty theme"     theme_kitty ;;
+            alacritty) run_step "alacritty theme" theme_alacritty ;;
+            wezterm)   run_step "wezterm theme"   theme_wezterm ;;
+            foot)      run_step "foot theme"      theme_foot ;;
+            xterm)     run_step "xterm theme"     theme_xterm ;;
             *)         warn "No theme writer for '${t}'. Skipping." ;;
         esac
     done
@@ -683,7 +769,7 @@ install_terminal_theme() {
     # Only wire up fish when the user actually chose it — otherwise we would
     # silently create ~/.config/fish/config.fish for bash/zsh users.
     if [[ "$CHOSEN_SHELL" == "fish" ]]; then
-        setup_fish
+        run_step "fish setup" setup_fish
     fi
     success "Terminal theming done."
 }
@@ -697,18 +783,19 @@ install_fastfetch() {
         if [[ "$PKG_MANAGER" == "apt" ]]; then
             if [[ "$(uname -m)" != "x86_64" ]]; then
                 warn "This installer only supports x86_64. Skipping fastfetch."
-                return
-            fi
-            if ask "  Install fastfetch?"; then
+            elif ask "  Install fastfetch?"; then
                 info "Installing fastfetch via direct download..."
-                curl -sL "https://github.com/fastfetch-cli/fastfetch/releases/latest/download/fastfetch-linux-amd64.deb" \
-                    -o /tmp/fastfetch.deb
-                sudo apt install -y /tmp/fastfetch.deb
+                if curl -fsSL --connect-timeout 20 \
+                        "https://github.com/fastfetch-cli/fastfetch/releases/latest/download/fastfetch-linux-amd64.deb" \
+                        -o /tmp/fastfetch.deb \
+                   && sudo apt install -y /tmp/fastfetch.deb; then
+                    success "fastfetch installed."
+                else
+                    warn "fastfetch could not be installed (download or apt failed). Continuing."
+                fi
                 rm -f /tmp/fastfetch.deb
-                success "fastfetch installed."
             else
                 warn "Skipped fastfetch."
-                return
             fi
         elif [[ "$PKG_MANAGER" == "pacman" ]]; then
             if ask "  Install fastfetch (pacman)?"; then
@@ -718,10 +805,9 @@ install_fastfetch() {
                 fi
             else
                 warn "Skipped fastfetch."
-                return
             fi
         else
-            install_pkg "fastfetch" "fastfetch"
+            install_pkg "fastfetch" "fastfetch" || true
         fi
     else
         success "fastfetch is already installed."
@@ -733,18 +819,24 @@ install_fastfetch() {
         # Back up an existing config.jsonc (e.g. ml4w dotfiles) before touching it
         if [ -f ~/.config/fastfetch/config.jsonc ]; then
             cp ~/.config/fastfetch/config.jsonc \
-               ~/.config/fastfetch/config.jsonc.darky-backup
+               ~/.config/fastfetch/config.jsonc.darky-backup 2>/dev/null || true
             info "Existing config.jsonc backed up to config.jsonc.darky-backup"
         fi
 
-        cp "$TMP_DIR/config.jsonc"         ~/.config/fastfetch/
-        cp "$TMP_DIR/config-startup.jsonc" ~/.config/fastfetch/
-        cp "$TMP_DIR/bat.txt"             ~/.config/fastfetch/
+        local f
+        for f in config.jsonc config-startup.jsonc bat.txt; do
+            if [ -f "$TMP_DIR/$f" ]; then
+                cp "$TMP_DIR/$f" ~/.config/fastfetch/ 2>/dev/null \
+                    || warn "Could not copy ${f}."
+            else
+                warn "Source file ${f} not found in the repo — skipped."
+            fi
+        done
         success "fastfetch configs copied."
 
         # Some dotfile setups (ml4w/Hyprland) run bare `fastfetch` on shell start,
         # which reads config.jsonc — not config-startup.jsonc. Point it at our logo.
-        apply_fastfetch_logo
+        run_step "fastfetch logo" apply_fastfetch_logo
 
         STARTUP_LINE="fastfetch --config $HOME/.config/fastfetch/config-startup.jsonc"
 
@@ -767,8 +859,12 @@ install_fastfetch() {
 # logo comes from config.jsonc. Rewrite its "source" to point at bat.txt.
 apply_fastfetch_logo() {
     local cfg="$HOME/.config/fastfetch/config.jsonc"
-    # Use ~ so the config keeps working if $HOME ever changes
-    local logo="~/.config/fastfetch/bat.txt"
+    # Written as a literal ~ on purpose: fastfetch expands it itself, so the
+    # config keeps working if $HOME ever changes. shellcheck SC2088 is expected.
+    # shellcheck disable=SC2088  # literal ~ is intentional: fastfetch expands it
+    local logo='~/.config/fastfetch/bat.txt'
+    # Escape for use inside a sed replacement (| is our delimiter).
+    local logo_sed="${logo//|/\\|}"
 
     [ -f "$cfg" ] || return 0
 
@@ -780,12 +876,12 @@ apply_fastfetch_logo() {
     # Replace the logo source line, whatever path it currently uses.
     # Matches:  "source": "~/.config/ml4w/assets/ml4w.png",
     if grep -qE '"source"[[:space:]]*:' "$cfg"; then
-        sed -i -E "s|\"source\"[[:space:]]*:[[:space:]]*\"[^\"]*\"|\"source\": \"$logo\"|" "$cfg"
+        sed -i -E "s|\"source\"[[:space:]]*:[[:space:]]*\"[^\"]*\"|\"source\": \"${logo_sed}\"|" "$cfg"
         success "Fastfetch logo replaced with bat.txt in config.jsonc."
     else
         # No source key at all — inject one into the logo block
         if grep -qE '"logo"[[:space:]]*:' "$cfg"; then
-            sed -i -E "s|(\"logo\"[[:space:]]*:[[:space:]]*\{)|\1 \"source\": \"$logo\", \"type\": \"file\",|" "$cfg"
+            sed -i -E "s|(\"logo\"[[:space:]]*:[[:space:]]*\{)|\1 \"source\": \"${logo_sed}\", \"type\": \"file\",|" "$cfg"
             success "Fastfetch logo source injected into config.jsonc."
         else
             warn "Could not find a logo block in config.jsonc. Skipping logo override."
@@ -801,7 +897,7 @@ install_starship() {
     if ! command -v starship &>/dev/null; then
         if ! ask "  Install Starship prompt?"; then
             warn "Skipped Starship."
-            return
+            return 0
         fi
 
         info "Installing Starship..."
@@ -809,37 +905,33 @@ install_starship() {
         if [[ "$PKG_MANAGER" == "pacman" ]]; then
             if ! sudo pacman -S --needed --noconfirm starship; then
                 info "starship not in pacman repos. Using official install script..."
-                if curl -sS --connect-timeout 20 https://starship.rs/install.sh | sh -s -- -y; then
-                    success "Starship installed via install script."
-                else
-                    warn "Starship installation failed."
-                    return
+                if ! curl -fsSL --connect-timeout 20 https://starship.rs/install.sh | sh -s -- -y; then
+                    warn "Starship installation failed. Install manually: curl -sS https://starship.rs/install.sh | sh"
+                    return 0
                 fi
+                success "Starship installed via install script."
             fi
         elif [[ "$PKG_MANAGER" == "dnf" ]]; then
-            if dnf info starship &>/dev/null; then
-                sudo dnf install -y starship
+            if sudo dnf info starship &>/dev/null && sudo dnf install -y starship; then
                 success "Starship installed via dnf."
             else
-                info "starship not in dnf repos. Using official install script..."
-                if curl -sS --connect-timeout 20 https://starship.rs/install.sh | sh -s -- -y; then
-                    success "Starship installed via install script."
-                else
+                info "starship not available via dnf. Using official install script..."
+                if ! curl -fsSL --connect-timeout 20 https://starship.rs/install.sh | sh -s -- -y; then
                     warn "Starship installation failed. Install manually: curl -sS https://starship.rs/install.sh | sh"
-                    return
+                    return 0
                 fi
+                success "Starship installed via install script."
             fi
         elif [[ "$PKG_MANAGER" == "apt" ]]; then
             if sudo apt install -y starship 2>/dev/null; then
                 success "Starship installed via apt."
             else
                 warn "Not found in apt repos. Falling back to official install script..."
-                if curl -sS --connect-timeout 20 https://starship.rs/install.sh | sh -s -- -y; then
-                    success "Starship installed via install script."
-                else
-                    warn "Starship installation failed."
-                    return
+                if ! curl -fsSL --connect-timeout 20 https://starship.rs/install.sh | sh -s -- -y; then
+                    warn "Starship installation failed. Install manually: curl -sS https://starship.rs/install.sh | sh"
+                    return 0
                 fi
+                success "Starship installed via install script."
             fi
         fi
     else
@@ -847,8 +939,13 @@ install_starship() {
     fi
 
     if ask "  Copy starship.toml to ~/.config/starship.toml?"; then
-        cp "$TMP_DIR/starship.toml" ~/.config/starship.toml
-        success "starship.toml copied."
+        if [ -f "$TMP_DIR/starship.toml" ]; then
+            cp "$TMP_DIR/starship.toml" ~/.config/starship.toml 2>/dev/null \
+                && success "starship.toml copied." \
+                || warn "Could not copy starship.toml."
+        else
+            warn "starship.toml not found in the repo — skipped."
+        fi
     else
         warn "Skipped starship.toml."
     fi
@@ -869,12 +966,14 @@ install_starship() {
         success "Starship init already present in $SHELL_RC."
     else
         if ask "  Add Starship init to $SHELL_RC?"; then
-            grep -qF '/usr/local/bin' "$SHELL_RC" \
+            grep -qF '/usr/local/bin' "$SHELL_RC" 2>/dev/null \
                 || echo 'export PATH="/usr/local/bin:$PATH"' >> "$SHELL_RC"
-            echo "$INIT_LINE" >> "$SHELL_RC"
-            success "Starship init added to $SHELL_RC."
+            echo "$INIT_LINE" >> "$SHELL_RC" 2>/dev/null \
+                && success "Starship init added to $SHELL_RC." \
+                || warn "Could not write to $SHELL_RC."
         fi
     fi
+    return 0
 }
 
 # ─── Cleanup ──────────────────────────────────
@@ -950,9 +1049,9 @@ apply_shell_default() {
 
     # 1) Register in /etc/shells and set as login shell
     grep -qF "$shell_path" /etc/shells 2>/dev/null \
-        || echo "$shell_path" | sudo tee -a /etc/shells > /dev/null
+        || echo "$shell_path" | sudo tee -a /etc/shells > /dev/null 2>&1 || true
 
-    if [ "$(getent passwd "$USER" | cut -d: -f7)" != "$shell_path" ]; then
+    if [ "$(getent passwd "$USER" 2>/dev/null | cut -d: -f7)" != "$shell_path" ]; then
         if sudo chsh -s "$shell_path" "$USER" 2>/dev/null; then
             success "Login shell set to ${CHOSEN_SHELL} (active after next login)."
         else
@@ -977,9 +1076,12 @@ apply_shell_default() {
             [ -f "$ml4w_term.darky-backup" ] \
                 || cp "$ml4w_term" "$ml4w_term.darky-backup" 2>/dev/null || true
             # Bare shell name so it resolves via PATH (survives reinstalls)
-            echo "$base -e $CHOSEN_SHELL" > "$ml4w_term"
-            chmod +x "$ml4w_term"
-            success "ml4w terminal launcher now starts ${CHOSEN_SHELL}."
+            if echo "$base -e $CHOSEN_SHELL" > "$ml4w_term" 2>/dev/null; then
+                chmod +x "$ml4w_term" 2>/dev/null || true
+                success "ml4w terminal launcher now starts ${CHOSEN_SHELL}."
+            else
+                warn "Could not update $ml4w_term."
+            fi
         else
             info "ml4w terminal.sh has custom flags — left unchanged."
             info "To use ${CHOSEN_SHELL}, set: $base -e $CHOSEN_SHELL"
@@ -998,31 +1100,33 @@ apply_shell_default() {
             echo "    export DARKY_SHELL_BRIDGE=1"
             echo "    exec $CHOSEN_SHELL"
             echo "fi"
-        } > "$bridge"
-        success "ml4w bash loader will hand over to ${CHOSEN_SHELL}."
+        } > "$bridge" 2>/dev/null && success "ml4w bash loader will hand over to ${CHOSEN_SHELL}." \
+            || warn "Could not write $bridge."
     elif [ -f "$bridge" ]; then
         # Switching back to bash (or already on the chosen shell): drop the old
         # bridge, otherwise it would keep exec'ing the previous shell.
-        rm -f "$bridge"
+        rm -f "$bridge" 2>/dev/null || true
         success "Removed the old shell bridge."
     fi
 
     # 4) Make the new shell read the same starship/fastfetch setup
     if [[ "$CHOSEN_SHELL" == "zsh" ]]; then
         local zshrc="$HOME/.zshrc"
-        [ -f "$zshrc" ] || touch "$zshrc"
+        [ -f "$zshrc" ] || touch "$zshrc" 2>/dev/null || true
         if ! grep -qF "starship init zsh" "$zshrc" 2>/dev/null \
            && command -v starship &>/dev/null; then
-            echo 'eval "$(starship init zsh)"' >> "$zshrc"
-            success "Starship init added to ~/.zshrc."
+            echo 'eval "$(starship init zsh)"' >> "$zshrc" 2>/dev/null \
+                && success "Starship init added to ~/.zshrc." \
+                || warn "Could not write to $zshrc."
         fi
         if ! grep -qF "config-startup.jsonc" "$zshrc" 2>/dev/null \
            && command -v fastfetch &>/dev/null; then
-            echo "fastfetch --config \$HOME/.config/fastfetch/config-startup.jsonc" >> "$zshrc"
-            success "Fastfetch startup added to ~/.zshrc."
+            echo "fastfetch --config \$HOME/.config/fastfetch/config-startup.jsonc" >> "$zshrc" 2>/dev/null \
+                && success "Fastfetch startup added to ~/.zshrc." \
+                || warn "Could not write to $zshrc."
         fi
     elif [[ "$CHOSEN_SHELL" == "fish" ]]; then
-        setup_fish
+        run_step "fish setup" setup_fish
     fi
 
     # 5) Carry the user's personal settings across shells.
@@ -1035,8 +1139,9 @@ apply_shell_default() {
         echo ""
         echo -e "${BOLD}━━━ Shell config migration ━━━${RESET}"
         info "Switching from $(shell_display_name "$prev_shell") to $(shell_display_name "$CHOSEN_SHELL")."
-        migrate_shell_config "$prev_shell" "$CHOSEN_SHELL"
+        run_step "shell migration" migrate_shell_config "$prev_shell" "$CHOSEN_SHELL"
     fi
+    return 0
 }
 
 # ─── Shell config migration ───────────────────
@@ -1339,7 +1444,7 @@ apply_hyprland_config() {
             success "Hyprland: darky.conf updated (already sourced)."
         fi
     else
-        warn "~/.config/hypr/hyprland.conf not found. Add manually:"
+        warn "$HOME/.config/hypr/hyprland.conf not found. Add manually:"
         warn "  source = ~/.config/hypr/darky.conf"
     fi
 }
@@ -1404,17 +1509,19 @@ main() {
     echo -e "${BOLD}${CYAN}╚════════════════════════════════╝${RESET}"
     echo ""
 
+    # These two are the only fatal prerequisites: without a known distro or
+    # without the repo files there is nothing to install.
     detect_distro
-    detect_desktop
     check_git
     clone_repo
 
-    install_shell              # Step 0
-    install_font               # Step 1
-    install_rounded_corners    # Step 2 — KDE Rounded Corners (KDE only)
-    install_terminal_theme     # Step 3 — any terminal
-    install_fastfetch          # Step 4
-    install_starship           # Step 5
+    # Everything below is optional: a failing step warns and the run continues.
+    run_step "shell"            install_shell            # Step 0
+    run_step "font"             install_font             # Step 1
+    run_step "rounded corners"  install_rounded_corners  # Step 2 — KDE/Hyprland only
+    run_step "terminal theme"   install_terminal_theme   # Step 3 — any terminal
+    run_step "fastfetch"        install_fastfetch        # Step 4
+    run_step "starship"         install_starship         # Step 5
 
     cleanup
 
@@ -1422,15 +1529,16 @@ main() {
     echo -e "${GREEN}${BOLD}✔ Installation complete!${RESET}"
     echo ""
 
-    apply_konsole_profile
-    apply_hyprland_config
-    apply_shell_rc
-    apply_shell_default   # chsh + ml4w terminal launcher + rc wiring + migration
+    run_step "konsole profile"  apply_konsole_profile
+    run_step "hyprland config"  apply_hyprland_config
+    run_step "shell rc"         apply_shell_rc
+    run_step "shell default"    apply_shell_default   # chsh + ml4w terminal launcher + rc wiring + migration
 
     echo ""
     info "Relaunching terminal with Darky theme in 3 seconds..."
     sleep 3
-    relaunch_terminal
+    run_step "terminal relaunch" relaunch_terminal
+    return 0
 }
 
 main "$@"

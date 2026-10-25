@@ -29,6 +29,7 @@ Darky/
 ├── config-startup.jsonc
 ├── Darky.profile
 ├── DarkySlate.colorscheme
+├── darky-terminal-state.sh
 ├── install.sh
 ├── LICENSE
 ├── README.md
@@ -153,7 +154,7 @@ parts instead of failing on them:
   Konsole's default-profile step is skipped since it only applies to a KDE session.
 - **Rounded corners**: Hyprland has them built in. The installer writes
   `~/.config/hypr/darky.conf` with `decoration { rounding = 10 }` and sources it
-  from `hyprland.conf`. The Fedora COPR KWin effect is not used at all.
+  from `hyprland.conf`. No extra KWin effect or repository is involved.
 - **Font**: JetBrains Mono is installed system-wide via `fc-list`, and each
   terminal's own config gets `font_family JetBrains Mono` / `normal = { family = ... }`.
 - **Fish**: if you pick Fish, `starship init fish` and the fastfetch startup line
@@ -211,13 +212,54 @@ whether to carry your personal settings over:
 - **Nothing is overwritten silently**: the target rc is backed up to
   `<rc>.darky-backup`, and `uninstall.sh` restores it.
 
+### Your previous terminal is saved and restored
+Before Darky themes anything, `install.sh` records how your terminal was set up
+in `~/.config/darky-backup/terminal-state` (plus copies of the config files it is
+about to change):
+
+- which emulator you were actually using (detected from the parent process,
+  `$TERMINAL` or the desktop default),
+- the Konsole default profile that was active,
+- the ml4w `terminal.sh` launcher, if you have one.
+
+`uninstall.sh` puts all of it back — config files, Konsole default profile and the
+ml4w launcher — and reopens the emulator you had before. The saved state is only
+deleted after a successful restore; if you skip the restore step it is kept so you
+can run the uninstaller again later.
+
+Your colours are saved separately too (`~/.config/darky-backup/terminal-themes/`),
+so during the restore step you can choose **"colours only"** — your old theme comes
+back while the rest of the config stays as it is.
+
+### Uninstalling
+```bash
+./uninstall.sh                 # remove Darky, then restore your previous terminal
+./uninstall.sh --restore-only  # put the previous terminal back, remove nothing
+./uninstall.sh --help          # usage
+```
+`--restore-only` is handy if you want your old terminal back but keep Darky's
+fastfetch/starship setup. It never deletes anything.
+
 ### Arch notes
-- Everything except KDE Rounded Corners is supported on Arch. That effect is installed from a Fedora COPR repo, so the installer skips it on Arch — use the AUR package instead:
-  ```bash
-  yay -S kwin-effect-rounded-corners-git
-  ```
+- Everything works on Arch. Rounded corners use the rounding that ships with
+  Plasma/Breeze, so no AUR package or extra repository is needed.
 - The installer uses `pacman -S --needed --noconfirm` and refreshes the database (`pacman -Sy`) automatically if a package is not found.
 - Prefer a full system upgrade before installing: `sudo pacman -Syu`
+
+### Failure behaviour (nothing aborts the run)
+Neither `install.sh` nor `uninstall.sh` uses `set -e`. Every step is optional and
+wrapped so that a failure only prints a `[WARN]` line and the run continues:
+
+- a package missing from the repo, a mirror down, no network, `chsh` denied,
+  a config file that cannot be written — all warn and move on;
+- each package install retries once after refreshing the package metadata
+  (`pacman -Sy` / `dnf makecache` / `apt update`) before giving up on that package;
+- if your chosen shell cannot be installed, the installer falls back to Bash
+  instead of stopping;
+- the only hard stops are an unsupported distro and a failed `git clone`,
+  because nothing else can work without them;
+- no prompt can trap you in a loop: every question accepts `y`/`n`/empty and
+  returns to the caller.
 
 ## License
 MIT

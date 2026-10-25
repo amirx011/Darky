@@ -6,7 +6,10 @@
 # ║            Kali | Ubuntu                     ║
 # ╚══════════════════════════════════════════════╝
 
-set -e
+# NOTE: `set -e` is deliberately NOT used — same rule as install.sh.
+# Removing an optional piece (package already gone, config file missing,
+# no permission, no network) must never abort the whole uninstall. Every
+# step goes through run_step and only reports a warning on failure.
 
 # ─── Colors ───────────────────────────────────
 RED='\033[0;31m'
@@ -21,6 +24,16 @@ success() { echo -e "${GREEN}[OK]${RESET}    $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
 error()   { echo -e "${RED}[ERROR]${RESET} $*"; exit 1; }
 
+# ─── Failure-tolerant helpers ─────────────────
+# Run an optional step: report and continue, never abort the uninstaller.
+run_step() {
+    local name="$1"; shift
+    if ! "$@"; then
+        warn "Step '${name}' did not finish cleanly — continuing with the rest."
+    fi
+    return 0
+}
+
 ask() {
     while true; do
         read -rp "$(echo -e "${BOLD}$1 [y/N]${RESET} ")" ans
@@ -31,6 +44,13 @@ ask() {
         esac
     done
 }
+
+# ─── Shared terminal state module ─────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/darky-terminal-state.sh" ]; then
+    # shellcheck source=darky-terminal-state.sh
+    . "$SCRIPT_DIR/darky-terminal-state.sh"
+fi
 
 # ─── Detect distro ────────────────────────────
 detect_distro() {
@@ -66,6 +86,7 @@ pkg_installed() {
         pacman) pacman -Qi "$pkg" &>/dev/null ;;
         dnf)    rpm -q "$pkg" &>/dev/null ;;
         apt)    dpkg -l "$pkg" 2>/dev/null | grep -q "^ii" ;;
+        *)      return 1 ;;
     esac
 }
 
@@ -76,62 +97,57 @@ remove_pkg() {
         pacman) sudo pacman -Rns --noconfirm "$pkg" ;;
         dnf)    sudo dnf remove -y "$pkg" ;;
         apt)    sudo apt remove -y --autoremove "$pkg" ;;
+        *)      return 1 ;;
     esac
 }
 
 # ─── Step 1: KDE Rounded Corners ──────────────
+# The installer no longer adds a COPR repo for this, but older runs may have
+# left the package behind — so clean it up if it is there.
 remove_rounded_corners() {
     echo ""
     echo -e "${BOLD}━━━ Step 1: KDE Rounded Corners ━━━${RESET}"
 
-    if [[ "$PKG_MANAGER" != "dnf" ]]; then
-        info "Rounded Corners via COPR is only for Fedora/RHEL. Skipping."
-        return
+    if ! command -v kwriteconfig6 &>/dev/null && ! command -v kwriteconfig5 &>/dev/null; then
+        info "KDE not detected. Skipping rounded corners cleanup."
+        return 0
     fi
 
-    if ! pkg_installed "kwin-effect-roundcorners"; then
-        info "kwin-effect-roundcorners is not installed. Skipping."
-        return
-    fi
-
-    if ! ask "  Remove kwin-effect-roundcorners and disable COPR?"; then
-        warn "Skipped KDE Rounded Corners removal."
-        return
-    fi
-
-    sudo dnf remove -y kwin-effect-roundcorners
-    success "kwin-effect-roundcorners removed."
-
-    if sudo dnf copr disable -y matinlotfali/KDE-Rounded-Corners 2>/dev/null; then
-        success "COPR repository disabled."
-    else
-        warn "Could not disable COPR automatically."
-        warn "Run manually: sudo dnf copr disable matinlotfali/KDE-Rounded-Corners"
-    fi
-
+    local kwc=""
     if command -v kwriteconfig6 &>/dev/null; then
-        local kwc="kwriteconfig6"
+        kwc="kwriteconfig6"
     elif command -v kwriteconfig5 &>/dev/null; then
-        local kwc="kwriteconfig5"
+        kwc="kwriteconfig5"
     fi
 
+    # Restore the built-in Breeze rounding we enabled
     if [ -n "$kwc" ]; then
-        $kwc --file kwinrc --group Plugins \
-            --key roundcornersEnabled "false"
-        $kwc --file kwinrc --group Effect-RoundedCorners \
-            --key Squircleness --delete 2>/dev/null || true
+        $kwc --file kwinrc --group Effect-Breeze --key RoundedCorners --delete 2>/dev/null || true
+        $kwc --file kwinrc --group Plugins --key roundcornersEnabled "false" 2>/dev/null || true
         $kwc --file breezerc \
             --group "Windeco Exception 0" \
             --key OutlineIntensity --delete 2>/dev/null || true
-        success "KWin config restored."
+        success "KWin rounded-corner config restored."
+    fi
+
+    # Leftover COPR package from an older version of this installer
+    if [[ "$PKG_MANAGER" == "dnf" ]] && pkg_installed "kwin-effect-roundcorners"; then
+        if ask "  Remove the leftover 'kwin-effect-roundcorners' package?"; then
+            remove_pkg "kwin-effect-roundcorners" \
+                && success "kwin-effect-roundcorners removed." \
+                || warn "Could not remove kwin-effect-roundcorners."
+        fi
     fi
 
     for bus in qdbus qdbus6; do
         if command -v "$bus" &>/dev/null; then
-            "$bus" org.kde.KWin /KWin reconfigure 2>/dev/null && \
-                success "KWin reconfigured live." && break || true
+            if "$bus" org.kde.KWin /KWin reconfigure 2>/dev/null; then
+                success "KWin reconfigured live."
+                break
+            fi
         fi
     done
+    return 0
 }
 
 # ─── Step 2: Terminal theme (all terminals) ────
@@ -164,46 +180,47 @@ remove_terminal_theme() {
 
     # Konsole
     if [ -f "$konsole_dir/DarkySlate.colorscheme" ] || [ -f "$konsole_dir/Darky.profile" ]; then
-        rm -f "$konsole_dir/DarkySlate.colorscheme" "$konsole_dir/Darky.profile"
+        rm -f "$konsole_dir/DarkySlate.colorscheme" "$konsole_dir/Darky.profile" 2>/dev/null || true
         success "Konsole: theme files removed."
     fi
 
     # Kitty
     if [ -f "$HOME/.config/kitty/darky.conf" ]; then
-        rm -f "$HOME/.config/kitty/darky.conf"
+        rm -f "$HOME/.config/kitty/darky.conf" 2>/dev/null || true
         sed -i '/include darky.conf/d' "$HOME/.config/kitty/kitty.conf" 2>/dev/null || true
         success "Kitty: theme removed."
     fi
 
     # Alacritty
     if [ -f "$HOME/.config/alacritty/darky.toml" ]; then
-        rm -f "$HOME/.config/alacritty/darky.toml"
+        rm -f "$HOME/.config/alacritty/darky.toml" 2>/dev/null || true
         sed -i '/darky.toml/d' "$HOME/.config/alacritty/alacritty.toml" 2>/dev/null || true
         success "Alacritty: theme removed."
     fi
 
     # WezTerm
     if [ -f "$HOME/.config/wezterm/darky.lua" ]; then
-        rm -f "$HOME/.config/wezterm/darky.lua"
+        rm -f "$HOME/.config/wezterm/darky.lua" 2>/dev/null || true
         sed -i "/require('darky')/d" "$HOME/.config/wezterm/wezterm.lua" 2>/dev/null || true
         success "WezTerm: theme removed."
     fi
 
     # Foot
     if [ -f "$HOME/.config/foot/darky.ini" ]; then
-        rm -f "$HOME/.config/foot/darky.ini"
+        rm -f "$HOME/.config/foot/darky.ini" 2>/dev/null || true
         sed -i '/darky.ini/d' "$HOME/.config/foot/foot.ini" 2>/dev/null || true
         success "Foot: theme removed."
     fi
 
     # Xterm
     if grep -qF "Darky theme" "$HOME/.Xresources" 2>/dev/null; then
-        sed -i '/Darky theme/,+5d' "$HOME/.Xresources"
+        sed -i '/Darky theme/,+5d' "$HOME/.Xresources" 2>/dev/null || true
         command -v xrdb &>/dev/null && xrdb -merge "$HOME/.Xresources" 2>/dev/null || true
         success "Xterm: theme removed from ~/.Xresources."
     fi
 
-    # Reset Konsole default profile
+    # Reset Konsole default profile — the saved pre-Darky profile is put back
+    # later by restore_terminal_setup(), so here we only drop the Darky one.
     if [ -f "$konsolerc" ]; then
         if command -v kwriteconfig6 &>/dev/null; then
             kwriteconfig6 --file "$konsolerc" \
@@ -214,7 +231,7 @@ remove_terminal_theme() {
                 --group "Desktop Entry" \
                 --key "DefaultProfile" --delete 2>/dev/null || true
         else
-            sed -i '/^DefaultProfile=Darky/d' "$konsolerc"
+            sed -i '/^DefaultProfile=Darky/d' "$konsolerc" 2>/dev/null || true
         fi
         success "Default terminal profile reset."
     fi
@@ -226,6 +243,7 @@ remove_terminal_theme() {
         sed -i '/config-startup.jsonc/d' "$fish_rc" 2>/dev/null || true
         success "Fish: Darky lines removed from config.fish."
     fi
+    return 0
 }
 
 # ─── Hyprland config ──────────────────────────
@@ -244,9 +262,10 @@ remove_hyprland_config() {
         return 0
     fi
 
-    rm -f "$conf"
+    rm -f "$conf" 2>/dev/null || true
     sed -i '/darky.conf/d' "$main" 2>/dev/null || true
     success "Hyprland: darky.conf removed."
+    return 0
 }
 
 # ─── Step 3: Starship ─────────────────────────
@@ -256,37 +275,42 @@ remove_starship() {
 
     if ! command -v starship &>/dev/null; then
         info "Starship is not installed. Skipping."
-        return
+        return 0
     fi
 
     if ! ask "  Remove Starship prompt?"; then
         warn "Skipped Starship removal."
-        return
+        return 0
     fi
 
     if pkg_installed "starship" 2>/dev/null; then
-        remove_pkg "starship"
-        success "Starship removed via ${PKG_MANAGER}."
+        remove_pkg "starship" \
+            && success "Starship removed via ${PKG_MANAGER}." \
+            || warn "Could not remove the starship package."
     fi
 
     # Covers script-installed binaries (official installer / cargo)
+    local bin
     for bin in /usr/local/bin/starship "$HOME/.cargo/bin/starship"; do
         if [ -e "$bin" ]; then
-            sudo rm -f "$bin"
-            success "Removed binary: $bin"
+            sudo rm -f "$bin" 2>/dev/null \
+                && success "Removed binary: $bin" \
+                || warn "Could not remove $bin"
         fi
     done
 
+    local rc
     for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
         if [ -f "$rc" ]; then
-            sed -i '/starship init/d' "$rc"
-            sed -i '\|export PATH="/usr/local/bin|d' "$rc"
+            sed -i '/starship init/d' "$rc" 2>/dev/null || true
+            sed -i '\|export PATH="/usr/local/bin|d' "$rc" 2>/dev/null || true
             success "Starship init removed from $(basename "$rc")."
         fi
     done
 
-    rm -f "$HOME/.config/starship.toml"
+    rm -f "$HOME/.config/starship.toml" 2>/dev/null || true
     success "starship.toml removed."
+    return 0
 }
 
 # ─── Step 4: Darky fastfetch configs ──────────
@@ -295,41 +319,44 @@ remove_darky_configs() {
     echo -e "${BOLD}━━━ Step 4: Darky Config Files ━━━${RESET}"
 
     local has_files=0
+    local f
     for f in "$HOME/.config/fastfetch/config.jsonc" \
              "$HOME/.config/fastfetch/config-startup.jsonc" \
              "$HOME/.config/fastfetch/bat.txt"; do
-        [ -f "$f" ] && has_files=1 && break
+        if [ -f "$f" ]; then has_files=1; break; fi
     done
 
     if [[ "$has_files" == "0" ]]; then
         info "No Darky fastfetch config files found. Skipping."
-        return
+        return 0
     fi
 
     if ! ask "  Remove Darky fastfetch config files?"; then
         warn "Skipped config cleanup."
-        return
+        return 0
     fi
 
     rm -f "$HOME/.config/fastfetch/config.jsonc" \
           "$HOME/.config/fastfetch/config-startup.jsonc" \
-           "$HOME/.config/fastfetch/bat.txt"
+          "$HOME/.config/fastfetch/bat.txt" 2>/dev/null || true
     success "Darky fastfetch configs removed."
 
     # Restore the config.jsonc that belonged to another dotfile setup (e.g. ml4w)
     if [ -f "$HOME/.config/fastfetch/config.jsonc.darky-backup" ]; then
         mv "$HOME/.config/fastfetch/config.jsonc.darky-backup" \
-           "$HOME/.config/fastfetch/config.jsonc"
-        success "Previous config.jsonc restored (ml4w or other setup)."
+           "$HOME/.config/fastfetch/config.jsonc" 2>/dev/null \
+            && success "Previous config.jsonc restored (ml4w or other setup)."
     fi
 
     # حذف startup line از shell rc ها
+    local rc
     for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
         if [ -f "$rc" ]; then
-            sed -i '/config-startup\.jsonc/d' "$rc"
+            sed -i '/config-startup\.jsonc/d' "$rc" 2>/dev/null || true
         fi
     done
     success "Fastfetch startup line removed from shell rc files."
+    return 0
 }
 
 # ─── Step 5: Restore original shell ───────────
@@ -341,62 +368,67 @@ remove_shell() {
 
     if [ ! -f "$backup_file" ]; then
         info "No shell backup found. Skipping."
-        return
+        return 0
     fi
 
-    OLD_SHELL="$(cat "$backup_file")"
+    OLD_SHELL="$(cat "$backup_file" 2>/dev/null)"
 
-    if [ ! -x "$OLD_SHELL" ]; then
-        warn "Original shell ($OLD_SHELL) not found. Skipping."
-        return
+    if [ -z "$OLD_SHELL" ] || [ ! -x "$OLD_SHELL" ]; then
+        warn "Original shell (${OLD_SHELL:-unknown}) not found. Skipping."
+        return 0
     fi
 
     CURRENT_SHELL="$(getent passwd "$USER" 2>/dev/null | cut -d: -f7)"
     if [ "$CURRENT_SHELL" = "$OLD_SHELL" ]; then
         success "Shell is already set to original ($OLD_SHELL)."
-        rm -f "$backup_file"
-        return
+        rm -f "$backup_file" 2>/dev/null || true
+        return 0
     fi
 
     if ! ask "  Restore original shell ($OLD_SHELL)?"; then
         warn "Skipped shell restore."
-        return
+        return 0
     fi
 
-    if sudo chsh -s "$OLD_SHELL" "$USER"; then
+    # Never abort the uninstall just because chsh was refused.
+    if sudo chsh -s "$OLD_SHELL" "$USER" 2>/dev/null; then
         success "Default shell restored to $OLD_SHELL. Takes effect on next login."
-        rm -f "$backup_file"
+        rm -f "$backup_file" 2>/dev/null || true
     else
-        error "Failed to restore shell."
+        warn "Could not restore the shell automatically."
+        warn "Run manually: chsh -s $OLD_SHELL"
     fi
 
     # Undo the ml4w terminal launcher override
     local ml4w_term="$HOME/.config/ml4w/settings/terminal.sh"
     if [ -f "$ml4w_term.darky-backup" ]; then
-        mv "$ml4w_term.darky-backup" "$ml4w_term"
-        chmod +x "$ml4w_term"
-        success "ml4w terminal launcher restored."
+        mv "$ml4w_term.darky-backup" "$ml4w_term" 2>/dev/null \
+            && chmod +x "$ml4w_term" 2>/dev/null \
+            && success "ml4w terminal launcher restored."
     fi
 
     remove_migrated_config
 
     # Remove the bash -> other-shell bridge
-    rm -f "$HOME/.config/bashrc/99-darky-shell"
+    rm -f "$HOME/.config/bashrc/99-darky-shell" 2>/dev/null || true
     success "Shell bridge removed."
+    return 0
 }
 
 # ─── Undo shell config migration ──────────────
 # Strips the block Darky appended when carrying settings between shells.
 remove_migrated_config() {
     local found=0
+    local rc
 
     for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.config/fish/config.fish"; do
         [ -f "$rc" ] || continue
         if grep -qF "Migrated from" "$rc" 2>/dev/null; then
             found=1
             if [ -f "${rc}.darky-backup" ]; then
-                cp "${rc}.darky-backup" "$rc"
-                success "Restored $rc from backup (migrated settings removed)."
+                cp "${rc}.darky-backup" "$rc" 2>/dev/null \
+                    && success "Restored $rc from backup (migrated settings removed)." \
+                    || warn "Could not restore $rc from backup."
             else
                 # No backup: drop the migrated block and the agent section
                 sed -i '/Migrated from .* by Darky/,/^$/d' "$rc" 2>/dev/null || true
@@ -409,10 +441,122 @@ remove_migrated_config() {
     if [ "$found" -eq 0 ]; then
         info "No migrated shell settings found."
     fi
+    return 0
+}
+
+# ─── Step 6: Bring back the user's previous terminal ───
+# The installer saved the terminal setup in ~/.config/darky-backup before
+# theming anything. This puts the config files, the Konsole default profile
+# and the ml4w launcher back, then reopens the original emulator.
+restore_terminal_setup() {
+    echo ""
+    echo -e "${BOLD}━━━ Step 6: Restore Previous Terminal ━━━${RESET}"
+
+    if ! declare -F darky_restore_terminal_state >/dev/null; then
+        warn "darky-terminal-state.sh not found — cannot restore the previous terminal."
+        return 0
+    fi
+
+    if [ ! -f "$HOME/.config/darky-backup/terminal-state" ]; then
+        info "No saved terminal state found (Darky may predate this feature). Skipping."
+        return 0
+    fi
+
+    local prev
+    prev="$(darky_state_get CURRENT_TERMINAL)"
+    info "Previous terminal: ${prev:-unknown}"
+
+    if ! ask "  Restore your previous terminal setup?"; then
+        warn "Skipped terminal restore. The saved state is kept in ~/.config/darky-backup."
+        KEEP_STATE=1
+        return 0
+    fi
+
+    # Offer the narrow choice: only colours, or the whole config.
+    if declare -F darky_restore_theme_only >/dev/null \
+       && [ -f "$HOME/.config/darky-backup/terminal-themes/themes" ]; then
+        local scheme
+        scheme="$(darky_theme_get KONSOLE_SCHEME)"
+        info "Saved colour theme: ${scheme:-unknown}"
+        if ask "  Restore ONLY the old colours (keep the rest of the config)?"; then
+            run_step "colour theme restore" darky_restore_theme_only
+            # Colours are back; still reopen the emulator below.
+            local term
+            term="$(darky_state_get CURRENT_TERMINAL)"
+            if [ -n "$term" ] && command -v "$term" >/dev/null 2>&1; then
+                info "Reopening your previous terminal ($term)..."
+                nohup "$term" >/dev/null 2>&1 &
+                disown 2>/dev/null || true
+                success "Previous terminal reopened: $term"
+            fi
+            return 0
+        fi
+    fi
+
+    darky_restore_terminal_state
+    return 0
+}
+
+# ─── --restore-only: put the terminal back, remove nothing ───
+restore_only() {
+    echo ""
+    echo -e "${BOLD}${CYAN}╔══════════════════════════════════════╗${RESET}"
+    echo -e "${BOLD}${CYAN}║   Darky — restore terminal only      ║${RESET}"
+    echo -e "${BOLD}${CYAN}╚══════════════════════════════════════╝${RESET}"
+    echo ""
+    echo -e "  ${CYAN}Nothing will be uninstalled. Only your previous${RESET}"
+    echo -e "  ${CYAN}terminal setup is put back.${RESET}"
+    echo ""
+
+    if ! declare -F darky_restore_terminal_state >/dev/null; then
+        error "darky-terminal-state.sh not found next to this script."
+    fi
+
+    if [ ! -f "$HOME/.config/darky-backup/terminal-state" ]; then
+        error "No saved terminal state in ~/.config/darky-backup — nothing to restore."
+    fi
+
+    local prev
+    prev="$(darky_state_get CURRENT_TERMINAL)"
+    info "Saved previous terminal: ${prev:-unknown}"
+    info "Saved at: $(darky_state_get SAVED_AT)"
+
+    if ! ask "  Restore the previous terminal setup now?"; then
+        info "Cancelled."
+        exit 0
+    fi
+
+    run_step "terminal restore" darky_restore_terminal_state
+
+    echo ""
+    success "Terminal restored. Darky itself is still installed."
+    echo ""
+    return 0
 }
 
 # ─── Main ─────────────────────────────────────
 main() {
+    KEEP_STATE=0
+
+    # Argument handling — unknown flags are ignored on purpose (no hard exit).
+    local arg
+    for arg in "$@"; do
+        case "$arg" in
+            --restore-only|-r)
+                restore_only
+                exit 0
+                ;;
+            --help|-h)
+                echo "Usage: ./uninstall.sh [--restore-only]"
+                echo ""
+                echo "  (no flag)        Remove Darky and restore the previous terminal."
+                echo "  --restore-only   Only put the previous terminal back; remove nothing."
+                echo "  --help           Show this help."
+                exit 0
+                ;;
+        esac
+    done
+
     echo ""
     echo -e "${BOLD}${RED}╔════════════════════════════════╗${RESET}"
     echo -e "${BOLD}${RED}║    Darky-Plasma Uninstaller    ║${RESET}"
@@ -420,6 +564,7 @@ main() {
     echo ""
     echo -e "  ${YELLOW}This will revert Darky changes step by step.${RESET}"
     echo -e "  ${CYAN}Fastfetch and JetBrains Mono will NOT be touched.${RESET}"
+    echo -e "  ${CYAN}Your previous terminal setup will be restored.${RESET}"
     echo ""
 
     if ! ask "  Continue with uninstall?"; then
@@ -427,16 +572,25 @@ main() {
         exit 0
     fi
 
+    # Fatal only when the distro is unknown: package steps need it.
     detect_distro
 
-    remove_rounded_corners   # Step 1
-    remove_terminal_theme    # Step 2 — all terminals
-    remove_starship          # Step 3
-    remove_darky_configs     # Step 4
-    remove_shell             # Step 5
-    remove_hyprland_config   # Step 6 — Hyprland (if present)
+    # Every step below is optional — a failure warns and the run continues.
+    run_step "rounded corners"  remove_rounded_corners    # Step 1
+    run_step "terminal theme"   remove_terminal_theme     # Step 2 — all terminals
+    run_step "starship"         remove_starship           # Step 3
+    run_step "darky configs"    remove_darky_configs      # Step 4
+    run_step "shell restore"    remove_shell              # Step 5
+    run_step "hyprland config"  remove_hyprland_config    # Step 6 — Hyprland only
+    run_step "terminal restore" restore_terminal_setup    # Step 7 — previous terminal
 
-    rm -rf "$HOME/.config/darky-backup" 2>/dev/null || true
+    # Only drop the backup folder when the user actually restored it.
+    if [ "$KEEP_STATE" -eq 0 ]; then
+        rm -rf "$HOME/.config/darky-backup" 2>/dev/null || true
+    else
+        warn "Kept ~/.config/darky-backup so you can restore the terminal later:"
+        warn "  re-run uninstall.sh and answer 'y' at the restore step."
+    fi
 
     echo ""
     echo -e "${GREEN}${BOLD}✔ Darky has been removed. System restored.${RESET}"
@@ -444,6 +598,7 @@ main() {
     warn "Fastfetch and JetBrains Mono were intentionally kept."
     warn "Re-login or restart your terminal for all changes to take effect."
     echo ""
+    return 0
 }
 
 main "$@"
