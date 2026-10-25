@@ -48,7 +48,7 @@ Darky/
 ## Installation
 > Supports: Arch & Arch-based (Manjaro, EndeavourOS, Garuda, CachyOS, Artix, Parch), Fedora, RHEL-based, Debian/Ubuntu/Kali
 > Desktops: KDE Plasma, Hyprland, and anything else (terminal theming is desktop-independent)
-> Terminals: Konsole, Kitty, Alacritty, WezTerm, Foot, Xterm — every installed one gets themed
+> Terminals: Konsole, Kitty, Alacritty, WezTerm, Foot, Ghostty, Xterm — every installed one gets themed
 > Shells: Zsh, Bash, Fish
 
 
@@ -82,10 +82,27 @@ separate `darky.*` file that gets included/imported by your main config.
 |-----------|------------------------------------|------------------------------|
 | Konsole   | `~/.local/share/konsole/Darky*`    | profile (set as default)     |
 | Kitty     | `~/.config/kitty/darky.conf`       | `include darky.conf`         |
-| Alacritty | `~/.config/alacritty/darky.toml`   | `import = [...]`             |
-| WezTerm   | `~/.config/wezterm/darky.lua`      | `require('darky')`           |
-| Foot      | `~/.config/foot/darky.ini`         | `include=...`                |
+| Alacritty | `~/.config/alacritty/darky.toml`   | entry in `import = [...]`    |
+| WezTerm   | `~/.config/wezterm/darky.lua`      | merged via `config_builder`  |
+| Foot      | `~/.config/foot/darky.ini`         | `include=...` (top of file)  |
+| Ghostty   | `~/.config/ghostty/darky.conf`     | `config-file = ?darky.conf`  |
 | Xterm     | appended to `~/.Xresources`        | `xrdb -merge`                |
+
+Configs are never overwritten. The theme always lives in its own `darky.*`
+file, and only the include/import line is added to your main config:
+
+- **Alacritty**: `import` is a top-level TOML key, so the Darky entry is added
+  to your existing `import` array as its last element (or a new top-level
+  `import = [...]` is prepended). Legacy `alacritty.yml` setups are left alone —
+  run `alacritty migrate` once and re-run the installer.
+- **WezTerm**: a one-line hook (`dofile(.../darky-hook.lua)`) wraps
+  `wezterm.config_builder()` so the colours/font are merged without touching
+  your `return config`. If your config doesn't use `config_builder`, nothing is
+  modified and the manual lines are printed instead.
+- **Foot**: `include=` is a `[main]` option, so it is inserted at the top of
+  `foot.ini` (before any `[section]`). The generated file uses `[colors-dark]`
+  (foot ≥ 1.17) or `[colors]` (older), picked from `foot --version`.
+- **Ghostty**: works with both `~/.config/ghostty/config` and `config.ghostty`.
 
 ```bash
 # Konsole (manual)
@@ -122,7 +139,9 @@ cp config.jsonc ~/.config/fastfetch/
 cp config-startup.jsonc ~/.config/fastfetch
 cp bat.txt ~/.config/fastfetch
 ```
-> For other distros, change `"source": "Fedora"` in config.jsonc to your distro name
+> The logo is distro-agnostic: `config.jsonc` uses `"type": "auto"`, so fastfetch
+> picks the right distribution logo by itself. `config-startup.jsonc` uses the
+> Darky bat logo (`bat.txt`) instead.
 
 ### 4. Starship
 ```bash
@@ -145,6 +164,12 @@ echo 'eval "$(starship init bash)"' >> ~/.bashrc
 echo 'starship init fish | source' >> ~/.config/fish/config.fish
 
 ```
+
+> `install.sh` installs the prompt in three steps: your distro package, then the
+> official `starship.rs` script, and finally the official GitHub release binary
+> (installed to `~/.local/bin` when no package exists). The init line is added
+> to the right file per shell — `~/.bashrc`, `~/.zshrc`, or
+> `~/.config/fish/config.fish`.
 
 ### Hyprland notes
 Hyprland works out of the box — the installer detects it and skips the KDE-only

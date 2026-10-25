@@ -70,7 +70,10 @@ detect_distro() {
             "$DISTRO_ID" == "centos" || "$DISTRO_ID" == "almalinux" ||
             "$DISTRO_ID" == "rocky" ]]; then
         PKG_MANAGER="dnf"
-    elif [[ "$DISTRO_ID" == "kali" || "$DISTRO_ID" == "ubuntu" ]]; then
+    elif [[ "$DISTRO_ID" == "debian" || "$DISTRO_ID" == "ubuntu" || \
+            "$DISTRO_ID" == "kali" || "$DISTRO_ID" == "linuxmint" || \
+            "$DISTRO_ID" == "pop" || "$DISTRO_ID" == "elementary" || \
+            "$DISTRO_LIKE" == *"debian"* || "$DISTRO_LIKE" == *"ubuntu"* ]]; then
         PKG_MANAGER="apt"
     else
         error "Unsupported distro: $PRETTY_NAME"
@@ -165,7 +168,9 @@ remove_terminal_theme() {
     [ -f "$HOME/.config/kitty/darky.conf" ]       && found=1
     [ -f "$HOME/.config/alacritty/darky.toml" ]   && found=1
     [ -f "$HOME/.config/wezterm/darky.lua" ]      && found=1
+    [ -f "$HOME/.config/wezterm/darky-hook.lua" ] && found=1
     [ -f "$HOME/.config/foot/darky.ini" ]         && found=1
+    [ -f "$HOME/.config/ghostty/darky.conf" ]     && found=1
     grep -qF "Darky theme" "$HOME/.Xresources" 2>/dev/null && found=1
 
     if [ "$found" -eq 0 ]; then
@@ -191,16 +196,27 @@ remove_terminal_theme() {
         success "Kitty: theme removed."
     fi
 
-    # Alacritty
+    # Alacritty — remove only the Darky entry, never the user's other imports
     if [ -f "$HOME/.config/alacritty/darky.toml" ]; then
         rm -f "$HOME/.config/alacritty/darky.toml" 2>/dev/null || true
-        sed -i '/darky.toml/d' "$HOME/.config/alacritty/alacritty.toml" 2>/dev/null || true
+        local acfg="$HOME/.config/alacritty/alacritty.toml"
+        if [ -f "$acfg" ]; then
+            sed -i -E \
+                -e '/^[[:space:]]*"[^"]*darky\.toml"[[:space:]]*,?[[:space:]]*$/d' \
+                -e 's/"[^"]*darky\.toml"[[:space:]]*,[[:space:]]*//g' \
+                -e 's/,[[:space:]]*"[^"]*darky\.toml"//g' \
+                -e 's/"[^"]*darky\.toml"//g' \
+                "$acfg" 2>/dev/null || true
+            # Drop an import list that only existed because of Darky
+            sed -i -E '/^[[:space:]]*import[[:space:]]*=[[:space:]]*\[[[:space:]]*\][[:space:]]*$/d' "$acfg" 2>/dev/null || true
+        fi
         success "Alacritty: theme removed."
     fi
 
-    # WezTerm
-    if [ -f "$HOME/.config/wezterm/darky.lua" ]; then
-        rm -f "$HOME/.config/wezterm/darky.lua" 2>/dev/null || true
+    # WezTerm: drop the hook line, the hook file and the theme file
+    if [ -f "$HOME/.config/wezterm/darky.lua" ] || [ -f "$HOME/.config/wezterm/darky-hook.lua" ]; then
+        rm -f "$HOME/.config/wezterm/darky.lua" "$HOME/.config/wezterm/darky-hook.lua" 2>/dev/null || true
+        sed -i '/darky-hook\.lua/d' "$HOME/.config/wezterm/wezterm.lua" 2>/dev/null || true
         sed -i "/require('darky')/d" "$HOME/.config/wezterm/wezterm.lua" 2>/dev/null || true
         success "WezTerm: theme removed."
     fi
@@ -210,6 +226,14 @@ remove_terminal_theme() {
         rm -f "$HOME/.config/foot/darky.ini" 2>/dev/null || true
         sed -i '/darky.ini/d' "$HOME/.config/foot/foot.ini" 2>/dev/null || true
         success "Foot: theme removed."
+    fi
+
+    # Ghostty
+    if [ -f "$HOME/.config/ghostty/darky.conf" ]; then
+        rm -f "$HOME/.config/ghostty/darky.conf" 2>/dev/null || true
+        sed -i '/darky\.conf/d' "$HOME/.config/ghostty/config" \
+                                  "$HOME/.config/ghostty/config.ghostty" 2>/dev/null || true
+        success "Ghostty: theme removed."
     fi
 
     # Xterm
@@ -234,14 +258,6 @@ remove_terminal_theme() {
             sed -i '/^DefaultProfile=Darky/d' "$konsolerc" 2>/dev/null || true
         fi
         success "Default terminal profile reset."
-    fi
-
-    # Fish: remove the lines the installer appended
-    local fish_rc="$HOME/.config/fish/config.fish"
-    if [ -f "$fish_rc" ]; then
-        sed -i '/starship init fish/d' "$fish_rc" 2>/dev/null || true
-        sed -i '/config-startup.jsonc/d' "$fish_rc" 2>/dev/null || true
-        success "Fish: Darky lines removed from config.fish."
     fi
     return 0
 }
@@ -273,7 +289,15 @@ remove_starship() {
     echo ""
     echo -e "${BOLD}━━━ Step 3: Starship Prompt ━━━${RESET}"
 
-    if ! command -v starship &>/dev/null; then
+    local fish_rc="$HOME/.config/fish/config.fish"
+    local present=0
+    command -v starship &>/dev/null && present=1
+    for bin in /usr/local/bin/starship "$HOME/.local/bin/starship" "$HOME/.cargo/bin/starship"; do
+        [ -e "$bin" ] && present=1
+    done
+    grep -qs "starship init" "$HOME/.bashrc" "$HOME/.zshrc" "$fish_rc" 2>/dev/null && present=1
+
+    if [ "$present" -eq 0 ]; then
         info "Starship is not installed. Skipping."
         return 0
     fi
@@ -289,21 +313,26 @@ remove_starship() {
             || warn "Could not remove the starship package."
     fi
 
-    # Covers script-installed binaries (official installer / cargo)
+    # Covers script-installed binaries (official installer / cargo / user-local)
     local bin
-    for bin in /usr/local/bin/starship "$HOME/.cargo/bin/starship"; do
+    for bin in /usr/local/bin/starship "$HOME/.local/bin/starship" "$HOME/.cargo/bin/starship"; do
         if [ -e "$bin" ]; then
-            sudo rm -f "$bin" 2>/dev/null \
-                && success "Removed binary: $bin" \
-                || warn "Could not remove $bin"
+            # Try without sudo first: user-local installs (~/.local/bin) don't need it.
+            if rm -f "$bin" 2>/dev/null || sudo rm -f "$bin" 2>/dev/null; then
+                success "Removed binary: $bin"
+            else
+                warn "Could not remove $bin"
+            fi
         fi
     done
 
+    # bash, zsh and fish — the init line lives in a different file for fish
     local rc
-    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$fish_rc"; do
         if [ -f "$rc" ]; then
             sed -i '/starship init/d' "$rc" 2>/dev/null || true
             sed -i '\|export PATH="/usr/local/bin|d' "$rc" 2>/dev/null || true
+            sed -i '\|export PATH="$HOME/.local/bin|d' "$rc" 2>/dev/null || true
             success "Starship init removed from $(basename "$rc")."
         fi
     done
@@ -348,9 +377,9 @@ remove_darky_configs() {
             && success "Previous config.jsonc restored (ml4w or other setup)."
     fi
 
-    # حذف startup line از shell rc ها
+    # Drop the fastfetch startup line from every shell we may have touched
     local rc
-    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.config/fish/config.fish"; do
         if [ -f "$rc" ]; then
             sed -i '/config-startup\.jsonc/d' "$rc" 2>/dev/null || true
         fi

@@ -94,12 +94,15 @@ detect_distro() {
             "$DISTRO_ID" == "almalinux" || "$DISTRO_ID" == "rocky" ]]; then
         PKG_MANAGER="dnf"
         info "Detected distro: RHEL-based ($PRETTY_NAME)"
-    elif [[ "$DISTRO_ID" == "kali" ]]; then
+    # ── Debian family (Debian, Ubuntu, Kali, Mint, Pop!_OS, Zorin...) ──
+    # ID_LIKE covers derivatives (Mint: "ubuntu", Pop: "ubuntu debian",
+    # Kali: "debian"), while plain Debian has an empty ID_LIKE.
+    elif [[ "$DISTRO_ID" == "debian" || "$DISTRO_ID" == "ubuntu" || \
+            "$DISTRO_ID" == "kali" || "$DISTRO_ID" == "linuxmint" || \
+            "$DISTRO_ID" == "pop" || "$DISTRO_ID" == "elementary" || \
+            "$DISTRO_LIKE" == *"debian"* || "$DISTRO_LIKE" == *"ubuntu"* ]]; then
         PKG_MANAGER="apt"
-        info "Detected distro: Kali Linux"
-    elif [[ "$DISTRO_ID" == "ubuntu" ]]; then
-        PKG_MANAGER="apt"
-        info "Detected distro: Ubuntu Linux"
+        info "Detected distro: Debian-based (${PRETTY_NAME:-Debian})"
     else
         error "Unsupported distro: $PRETTY_NAME"
     fi
@@ -562,6 +565,47 @@ theme_kitty() {
 }
 
 # Alacritty: TOML colors + font
+# `import` is a top-level TOML key. Appending it after a [section] (font, window,
+# colors...) makes the file invalid and Alacritty refuses to start, and a
+# duplicate `import` key is invalid too. So an existing import array gets our
+# path appended as its last element (last import wins, i.e. Darky colours win).
+alacritty_add_import() {
+    local file="$1"
+    local p="$2"
+
+    awk -v p="$p" '
+        BEGIN { done = 0; in_array = 0 }
+        {
+            if (!done && !in_array && $0 ~ /^[[:space:]]*import[[:space:]]*=[[:space:]]*\[/) {
+                if ($0 ~ /\]/) {
+                    line = $0
+                    sub(/[[:space:]]*\][[:space:]]*$/, "", line)
+                    if (line ~ /\[[[:space:]]*$/)
+                        print line "\"" p "\"]"
+                    else if (line ~ /,[[:space:]]*$/)
+                        print line "\"" p "\"]"
+                    else
+                        print line ", \"" p "\"]"
+                    done = 1
+                    next
+                }
+                in_array = 1
+                print
+                next
+            }
+            if (in_array && !done && $0 ~ /^[[:space:]]*\]/) {
+                print "\"" p "\","
+                print
+                in_array = 0
+                done = 1
+                next
+            }
+            print
+        }
+        END { exit(done ? 0 : 1) }
+    ' "$file" > "$file.darky-tmp" && mv "$file.darky-tmp" "$file"
+}
+
 theme_alacritty() {
     local dir="$HOME/.config/alacritty"
     local file="$dir/darky.toml"
@@ -602,20 +646,52 @@ theme_alacritty() {
         echo "normal = { family = 'JetBrains Mono' }"
     } > "$file"
 
-    if [ -f "$dir/alacritty.toml" ]; then
-        if ! grep -qF "darky.toml" "$dir/alacritty.toml"; then
-            echo "import = [\"~/.config/alacritty/darky.toml\"]" >> "$dir/alacritty.toml"
-            success "Alacritty: theme written and imported in alacritty.toml."
+    local import_path='~/.config/alacritty/darky.toml'
+    local main_cfg="$dir/alacritty.toml"
+
+    # Legacy YAML config: creating alacritty.toml would shadow (and effectively
+    # wipe) the user's config, so leave it to them to migrate.
+    if [ -f "$dir/alacritty.yml" ] && [ ! -f "$main_cfg" ]; then
+        warn "Alacritty: legacy alacritty.yml found — not touching it."
+        warn "Run 'alacritty migrate' once, then re-run the installer to theme Alacritty."
+        return 0
+    fi
+
+    if [ ! -f "$main_cfg" ]; then
+        printf 'import = ["%s"]\n' "$import_path" > "$main_cfg"
+        success "Alacritty: theme written and alacritty.toml created."
+        return 0
+    fi
+
+    if grep -qF "darky.toml" "$main_cfg"; then
+        success "Alacritty: theme updated (already imported)."
+        return 0
+    fi
+
+    if grep -qE '^[[:space:]]*import[[:space:]]*=' "$main_cfg"; then
+        if alacritty_add_import "$main_cfg" "$import_path"; then
+            success "Alacritty: theme imported into alacritty.toml."
         else
-            success "Alacritty: theme updated (already imported)."
+            warn "Alacritty: could not add the import to $main_cfg."
+            warn "Add this at the TOP of that file: import = [\"$import_path\"]"
         fi
     else
-        printf 'import = ["~/.config/alacritty/darky.toml"]\n' > "$dir/alacritty.toml"
-        success "Alacritty: theme written and alacritty.toml created."
+        # No import yet: it has to be a top-level key, so put it first.
+        if { printf 'import = ["%s"]\n\n' "$import_path"; cat "$main_cfg"; } > "$main_cfg.darky-tmp" \
+           && mv "$main_cfg.darky-tmp" "$main_cfg"; then
+            success "Alacritty: theme imported into alacritty.toml."
+        else
+            rm -f "$main_cfg.darky-tmp" 2>/dev/null || true
+            warn "Alacritty: could not update $main_cfg."
+        fi
     fi
 }
 
 # WezTerm: Lua colors + font
+# The theme file returns a plain table. Wiring it into an existing config is
+# done via a tiny hook that wraps wezterm.config_builder(): appending
+# `require('darky')` after the usual `return config` would be a Lua syntax
+# error, and a bare require() would not apply anything anyway.
 theme_wezterm() {
     local dir="$HOME/.config/wezterm"
     mkdir -p "$dir"
@@ -642,47 +718,157 @@ theme_wezterm() {
         echo "}"
     } > "$dir/darky.lua"
 
-    if [ -f "$dir/wezterm.lua" ]; then
-        if ! grep -qF "darky.lua" "$dir/wezterm.lua"; then
-            echo "-- Darky theme" >> "$dir/wezterm.lua"
-            echo "require('darky')" >> "$dir/wezterm.lua"
-            success "WezTerm: theme written and required from wezterm.lua."
-        else
-            success "WezTerm: theme updated (already required)."
-        fi
-    else
-        printf "local wezterm = require('wezterm')\nreturn require('darky')\n" > "$dir/wezterm.lua"
+    local cfg="$dir/wezterm.lua"
+
+    if [ ! -f "$cfg" ]; then
+        printf "local wezterm = require('wezterm')\nreturn require('darky')\n" > "$cfg"
         success "WezTerm: theme written and wezterm.lua created."
+        return 0
+    fi
+
+    if grep -qF "darky" "$cfg"; then
+        success "WezTerm: theme updated (already wired)."
+        return 0
+    fi
+
+    if ! grep -qF "config_builder" "$cfg"; then
+        warn "WezTerm: wezterm.lua does not use wezterm.config_builder()."
+        warn "Nothing was modified. Add these lines to apply the theme manually:"
+        warn "  local darky = require('darky')"
+        warn "  config.colors = darky.colors"
+        warn "  config.font = darky.font"
+        warn "  config.font_size = darky.font_size"
+        return 0
+    fi
+
+    {
+        echo "-- Darky theme hook — generated by Darky installer"
+        echo "-- Merges darky.lua into whatever wezterm.config_builder() returns."
+        echo "local ok, darky = pcall(require, 'darky')"
+        echo "if ok then"
+        echo "  local w = require('wezterm')"
+        echo "  local build = w.config_builder"
+        echo "  w.config_builder = function(...)"
+        echo "    local cfg = build(...)"
+        echo "    cfg.colors = darky.colors"
+        echo "    cfg.font = darky.font"
+        echo "    cfg.font_size = darky.font_size"
+        echo "    return cfg"
+        echo "  end"
+        echo "end"
+    } > "$dir/darky-hook.lua"
+
+    # One single line is prepended, so it is trivial to remove again.
+    if sed -i "1i dofile(os.getenv('HOME') .. '/.config/wezterm/darky-hook.lua') -- Darky theme" "$cfg" 2>/dev/null; then
+        success "WezTerm: theme written and hooked into wezterm.lua."
+    else
+        warn "WezTerm: could not update $cfg."
+    fi
+}
+
+# Ghostty: plain key=value config, loaded through config-file
+theme_ghostty() {
+    local dir="$HOME/.config/ghostty"
+    mkdir -p "$dir"
+
+    {
+        echo "# Darky theme — generated by Darky installer"
+        echo "background = #${DARKY_BG}"
+        echo "foreground = #${DARKY_FG}"
+        echo "cursor-color = #${DARKY_CURSOR}"
+        local i
+        for i in 0 1 2 3 4 5 6 7; do
+            echo "palette = ${i}=#${DARKY_PALETTE[$i]}"
+            echo "palette = $((i + 8))=#${DARKY_PALETTE[$((i + 8))]}"
+        done
+        echo "font-family = JetBrains Mono"
+        echo "font-size = 11"
+    } > "$dir/darky.conf"
+
+    # Ghostty reads `config.ghostty` (new) or `config` (legacy). Use whichever
+    # already exists, otherwise create the legacy name — both versions read it.
+    local cfg=""
+    local c
+    for c in "$dir/config.ghostty" "$dir/config"; do
+        if [ -f "$c" ]; then cfg="$c"; break; fi
+    done
+
+    if [ -z "$cfg" ]; then
+        cfg="$dir/config"
+        echo "config-file = ?darky.conf" > "$cfg"
+        success "Ghostty: theme written and config created."
+        return 0
+    fi
+
+    if grep -qF "darky.conf" "$cfg"; then
+        success "Ghostty: theme updated (already included)."
+        return 0
+    fi
+
+    # Included files are loaded after the parent config, so Darky's colours win.
+    if echo "config-file = ?darky.conf" >> "$cfg" 2>/dev/null; then
+        success "Ghostty: theme written and included in $(basename "$cfg")."
+    else
+        warn "Could not update $cfg."
     fi
 }
 
 # Foot: INI-style colors
+# foot >= 1.17 only knows [colors-dark] / [colors-light]; older versions only
+# know [colors]. Writing the wrong section (or invalid keys) makes foot refuse
+# the whole config, so the section name is chosen from the installed version.
+foot_colors_section() {
+    local ver major minor
+    ver="$(foot --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -n1)"
+    [ -n "$ver" ] || { echo "colors-dark"; return; }
+    major="${ver%%.*}"
+    minor="${ver#*.}"
+    if (( major < 1 || (major == 1 && minor < 17) )); then
+        echo "colors"
+    else
+        echo "colors-dark"
+    fi
+}
+
 theme_foot() {
     local dir="$HOME/.config/foot"
     mkdir -p "$dir"
+    local section
+    section="$(foot_colors_section)"
+
     {
         echo "# Darky theme — generated by Darky installer"
-        echo "[colors]"
+        echo "[${section}]"
         echo "background=${DARKY_BG}"
         echo "foreground=${DARKY_FG}"
         local i
-        for i in "${!DARKY_PALETTE[@]}"; do
+        for i in 0 1 2 3 4 5 6 7; do
             echo "regular${i}=${DARKY_PALETTE[$i]}"
+        done
+        for i in 0 1 2 3 4 5 6 7; do
+            echo "bright${i}=${DARKY_PALETTE[$((i + 8))]}"
         done
         echo "[main]"
         echo "font=JetBrains Mono:size=11"
     } > "$dir/darky.ini"
 
-    if [ -f "$dir/foot.ini" ]; then
-        if ! grep -qF "darky.ini" "$dir/foot.ini"; then
-            echo "include=~/.config/foot/darky.ini" >> "$dir/foot.ini"
-            success "Foot: theme written and included in foot.ini."
-        else
-            success "Foot: theme updated (already included)."
-        fi
-    else
+    if [ ! -f "$dir/foot.ini" ]; then
         echo "include=~/.config/foot/darky.ini" > "$dir/foot.ini"
         success "Foot: theme written and foot.ini created."
+        return 0
+    fi
+
+    if grep -qF "darky.ini" "$dir/foot.ini"; then
+        success "Foot: theme updated (already included)."
+        return 0
+    fi
+
+    # `include` is a [main] option: it must come before the first section
+    # header, otherwise foot rejects it as an invalid option.
+    if sed -i '1i include=~/.config/foot/darky.ini' "$dir/foot.ini" 2>/dev/null; then
+        success "Foot: theme written and included in foot.ini."
+    else
+        warn "Could not update $dir/foot.ini."
     fi
 }
 
@@ -705,6 +891,28 @@ theme_xterm() {
     success "Xterm: theme appended to ~/.Xresources."
 }
 
+# Fish needs its own init line (not eval "$(...)"), so keep it in one place:
+# setup_fish() runs before Starship is installed, install_starship() runs after,
+# and both must be able to wire the prompt up idempotently.
+add_fish_starship_init() {
+    command -v fish &>/dev/null || return 0
+    local cfg="$HOME/.config/fish/config.fish"
+
+    # Nothing to initialise until the binary exists. Callers re-run this later.
+    command -v starship &>/dev/null || return 0
+
+    mkdir -p "$(dirname "$cfg")"
+    if grep -qF "starship init fish" "$cfg" 2>/dev/null; then
+        return 0
+    fi
+
+    if echo 'starship init fish | source' >> "$cfg" 2>/dev/null; then
+        success "Fish: starship init added to config.fish."
+    else
+        warn "Could not write to $cfg."
+    fi
+}
+
 # Fish shell: prompt/theme integration
 setup_fish() {
     command -v fish &>/dev/null || return 0
@@ -712,12 +920,7 @@ setup_fish() {
     mkdir -p "$dir"
 
     # Fish needs starship init in config.fish (not .bashrc/.zshrc)
-    if command -v starship &>/dev/null; then
-        if ! grep -qF "starship init fish" "$dir/config.fish" 2>/dev/null; then
-            echo 'starship init fish | source' >> "$dir/config.fish"
-            success "Fish: starship init added to config.fish."
-        fi
-    fi
+    add_fish_starship_init
 
     # Fish needs fastfetch startup in config.fish too
     if [ -f "$HOME/.config/fastfetch/config-startup.jsonc" ]; then
@@ -734,7 +937,7 @@ install_terminal_theme() {
 
     detect_terminals
     if [ ${#TERMINALS[@]} -eq 0 ]; then
-        warn "No supported terminal found (konsole/kitty/alacritty/wezterm/foot/xterm)."
+        warn "No supported terminal found (konsole/kitty/alacritty/wezterm/foot/ghostty/xterm)."
         warn "Skipping terminal theme."
         return
     fi
@@ -761,6 +964,7 @@ install_terminal_theme() {
             alacritty) run_step "alacritty theme" theme_alacritty ;;
             wezterm)   run_step "wezterm theme"   theme_wezterm ;;
             foot)      run_step "foot theme"      theme_foot ;;
+            ghostty)   run_step "ghostty theme"   theme_ghostty ;;
             xterm)     run_step "xterm theme"     theme_xterm ;;
             *)         warn "No theme writer for '${t}'. Skipping." ;;
         esac
@@ -842,7 +1046,7 @@ install_fastfetch() {
 
         # Fish gets its startup line from setup_fish() in a fish-compatible file
         if [[ "$CHOSEN_SHELL" == "fish" ]]; then
-            info "Fish shell: startup line will be added to ~/.config/fish/config.fish."
+            run_step "fish setup" setup_fish
         elif grep -qF "config-startup.jsonc" "$SHELL_RC" 2>/dev/null; then
             success "Fastfetch startup already present in $SHELL_RC."
         else
@@ -879,9 +1083,16 @@ apply_fastfetch_logo() {
         sed -i -E "s|\"source\"[[:space:]]*:[[:space:]]*\"[^\"]*\"|\"source\": \"${logo_sed}\"|" "$cfg"
         success "Fastfetch logo replaced with bat.txt in config.jsonc."
     else
-        # No source key at all — inject one into the logo block
+        # No source key at all — inject one into the logo block. JSON has no
+        # duplicate keys, so the existing "type" (usually "auto") is switched
+        # to "file" instead of adding a second "type" entry.
         if grep -qE '"logo"[[:space:]]*:' "$cfg"; then
-            sed -i -E "s|(\"logo\"[[:space:]]*:[[:space:]]*\{)|\1 \"source\": \"${logo_sed}\", \"type\": \"file\",|" "$cfg"
+            if grep -qE '"type"[[:space:]]*:' "$cfg"; then
+                sed -i -E "s|(\"logo\"[[:space:]]*:[[:space:]]*\{)|\1 \"source\": \"${logo_sed}\",|" "$cfg"
+                sed -i -E '0,/"type"[[:space:]]*:[[:space:]]*"[^"]*"/s//"type": "file"/' "$cfg"
+            else
+                sed -i -E "s|(\"logo\"[[:space:]]*:[[:space:]]*\{)|\1 \"source\": \"${logo_sed}\", \"type\": \"file\",|" "$cfg"
+            fi
             success "Fastfetch logo source injected into config.jsonc."
         else
             warn "Could not find a logo block in config.jsonc. Skipping logo override."
@@ -890,6 +1101,35 @@ apply_fastfetch_logo() {
 }
 
 # ─── Step 5: Starship ─────────────────────────
+# Last-resort installer: the official release binary from GitHub. Needed when
+# the distro has no starship package and starship.rs is unreachable.
+install_starship_from_github() {
+    local arch url tmp
+    case "$(uname -m)" in
+        x86_64|amd64)   arch="x86_64-unknown-linux-musl" ;;
+        aarch64|arm64)  arch="aarch64-unknown-linux-musl" ;;
+        armv7l|armv7)   arch="armv7-unknown-linux-gnueabihf" ;;
+        *)              return 1 ;;
+    esac
+
+    command -v curl &>/dev/null || return 1
+    url="https://github.com/starship/starship/releases/latest/download/starship-${arch}.tar.gz"
+    tmp="$(mktemp -d 2>/dev/null)" || return 1
+
+    if curl -fsSL --connect-timeout 20 "$url" -o "$tmp/starship.tar.gz" 2>/dev/null \
+       && tar -xzf "$tmp/starship.tar.gz" -C "$tmp" 2>/dev/null \
+       && [ -f "$tmp/starship" ]; then
+        mkdir -p "$HOME/.local/bin"
+        if install -m755 "$tmp/starship" "$HOME/.local/bin/starship" 2>/dev/null; then
+            rm -rf "$tmp"
+            return 0
+        fi
+    fi
+
+    rm -rf "$tmp"
+    return 1
+}
+
 install_starship() {
     echo ""
     echo -e "${BOLD}━━━ Step 5: Starship Prompt ━━━${RESET}"
@@ -903,39 +1143,55 @@ install_starship() {
         info "Installing Starship..."
 
         if [[ "$PKG_MANAGER" == "pacman" ]]; then
-            if ! sudo pacman -S --needed --noconfirm starship; then
+            if sudo pacman -S --needed --noconfirm starship; then
+                success "Starship installed via pacman."
+            else
                 info "starship not in pacman repos. Using official install script..."
-                if ! curl -fsSL --connect-timeout 20 https://starship.rs/install.sh | sh -s -- -y; then
-                    warn "Starship installation failed. Install manually: curl -sS https://starship.rs/install.sh | sh"
-                    return 0
+                if curl -fsSL --connect-timeout 20 https://starship.rs/install.sh | sh -s -- -y; then
+                    success "Starship installed via install script."
+                else
+                    warn "The official install script failed."
                 fi
-                success "Starship installed via install script."
             fi
         elif [[ "$PKG_MANAGER" == "dnf" ]]; then
             if sudo dnf info starship &>/dev/null && sudo dnf install -y starship; then
                 success "Starship installed via dnf."
             else
                 info "starship not available via dnf. Using official install script..."
-                if ! curl -fsSL --connect-timeout 20 https://starship.rs/install.sh | sh -s -- -y; then
-                    warn "Starship installation failed. Install manually: curl -sS https://starship.rs/install.sh | sh"
-                    return 0
+                if curl -fsSL --connect-timeout 20 https://starship.rs/install.sh | sh -s -- -y; then
+                    success "Starship installed via install script."
+                else
+                    warn "The official install script failed."
                 fi
-                success "Starship installed via install script."
             fi
         elif [[ "$PKG_MANAGER" == "apt" ]]; then
             if sudo apt install -y starship 2>/dev/null; then
                 success "Starship installed via apt."
             else
                 warn "Not found in apt repos. Falling back to official install script..."
-                if ! curl -fsSL --connect-timeout 20 https://starship.rs/install.sh | sh -s -- -y; then
-                    warn "Starship installation failed. Install manually: curl -sS https://starship.rs/install.sh | sh"
-                    return 0
+                if curl -fsSL --connect-timeout 20 https://starship.rs/install.sh | sh -s -- -y; then
+                    success "Starship installed via install script."
+                else
+                    warn "The official install script failed."
                 fi
-                success "Starship installed via install script."
             fi
         fi
     else
         success "Starship is already installed."
+    fi
+
+    if ! command -v starship &>/dev/null; then
+        info "Trying the official GitHub release as a last resort..."
+        if install_starship_from_github; then
+            export PATH="$HOME/.local/bin:$PATH"
+            success "Starship installed to ~/.local/bin."
+        fi
+    fi
+
+    if ! command -v starship &>/dev/null; then
+        warn "Starship is still not available on PATH after installation."
+        warn "Install it manually (https://starship.rs/guide/), then re-run this installer."
+        return 0
     fi
 
     if ask "  Copy starship.toml to ~/.config/starship.toml?"; then
@@ -951,8 +1207,15 @@ install_starship() {
     fi
 
     if [[ "$CHOSEN_SHELL" == "fish" ]]; then
-        # Fish syntax differs and lives in config.fish — setup_fish() handles it
-        info "Fish shell: starship init will be added to ~/.config/fish/config.fish."
+        # Fish syntax differs and lives in config.fish. setup_fish() already ran
+        # earlier (during the terminal theme step), i.e. *before* Starship was
+        # installed, so it could not add anything — do it now.
+        if ! command -v starship &>/dev/null; then
+            warn "Starship binary not found — skipping fish init line."
+            warn "After installing starship, run: echo 'starship init fish | source' >> ~/.config/fish/config.fish"
+            return 0
+        fi
+        add_fish_starship_init
         return 0
     fi
 
@@ -966,6 +1229,9 @@ install_starship() {
         success "Starship init already present in $SHELL_RC."
     else
         if ask "  Add Starship init to $SHELL_RC?"; then
+            # Covers every place the installer may have put the binary.
+            grep -qF '.local/bin' "$SHELL_RC" 2>/dev/null \
+                || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_RC"
             grep -qF '/usr/local/bin' "$SHELL_RC" 2>/dev/null \
                 || echo 'export PATH="/usr/local/bin:$PATH"' >> "$SHELL_RC"
             echo "$INIT_LINE" >> "$SHELL_RC" 2>/dev/null \
@@ -1115,6 +1381,8 @@ apply_shell_default() {
         [ -f "$zshrc" ] || touch "$zshrc" 2>/dev/null || true
         if ! grep -qF "starship init zsh" "$zshrc" 2>/dev/null \
            && command -v starship &>/dev/null; then
+            grep -qF '.local/bin' "$zshrc" 2>/dev/null \
+                || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$zshrc"
             echo 'eval "$(starship init zsh)"' >> "$zshrc" 2>/dev/null \
                 && success "Starship init added to ~/.zshrc." \
                 || warn "Could not write to $zshrc."
@@ -1451,6 +1719,11 @@ apply_hyprland_config() {
 
 # ─── Auto-apply: source shell rc ──────────────
 apply_shell_rc() {
+    # Fish syntax cannot be sourced by bash (this script); a new fish will pick
+    # the file up on its own.
+    if [[ "$CHOSEN_SHELL" == "fish" ]]; then
+        return 0
+    fi
     if [ -f "$SHELL_RC" ]; then
         # shellcheck disable=SC1090
         source "$SHELL_RC" 2>/dev/null || true
@@ -1483,6 +1756,9 @@ relaunch_terminal() {
             ;;
         foot)
             nohup foot &>/dev/null &
+            ;;
+        ghostty)
+            nohup ghostty &>/dev/null &
             ;;
         *)
             warn "Don't know how to relaunch '${term}'. Restart it manually."
