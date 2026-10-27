@@ -24,6 +24,13 @@ if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/darky-terminal-state.sh" ]; then
     # shellcheck source=darky-terminal-state.sh
     . "$SCRIPT_DIR/darky-terminal-state.sh"
 fi
+# The module is optional; keep the theme writers from failing if it is absent.
+if ! declare -F darky_extra_save >/dev/null; then
+    darky_extra_save() { :; }
+fi
+if ! declare -F darky_extra_get >/dev/null; then
+    darky_extra_get() { :; }
+fi
 
 # ─── Colors ───────────────────────────────────
 RED='\033[0;31m'
@@ -200,12 +207,19 @@ clone_repo() {
 
 # ─── Detect desktop environment / compositor ──
 detect_desktop() {
-    if [[ -n "$HYPRLAND_INSTANCE_SIGNATURE" ]] || command -v Hyprland &>/dev/null; then
+    # XDG_CURRENT_DESKTOP is what the running session reports — trust it
+    # first. `command -v Hyprland` is only a last resort for a plain TTY,
+    # otherwise a *different* compositor installed on the machine (Hyprland
+    # on a KDE box, or the reverse) would be detected instead of the real one.
+    local xdg="${XDG_CURRENT_DESKTOP,,}"
+    if [[ -n "$HYPRLAND_INSTANCE_SIGNATURE" || "$xdg" == *"hyprland"* ]]; then
         DESKTOP="hyprland"
-    elif [[ "$XDG_CURRENT_DESKTOP" == *"KDE"* || "$XDG_CURRENT_DESKTOP" == *"Plasma"* ]]; then
+    elif [[ "$xdg" == *"kde"* || "$xdg" == *"plasma"* ]]; then
         DESKTOP="kde"
-    elif [[ -n "$XDG_CURRENT_DESKTOP" ]]; then
-        DESKTOP="${XDG_CURRENT_DESKTOP,,}"
+    elif [[ -n "$xdg" ]]; then
+        DESKTOP="$xdg"
+    elif command -v Hyprland &>/dev/null; then
+        DESKTOP="hyprland"
     else
         DESKTOP="unknown"
     fi
@@ -213,21 +227,62 @@ detect_desktop() {
     info "Detected desktop: ${DESKTOP}"
 }
 
+# ─── Terminal registry ────────────────────────
+# Every supported emulator is one row: <id>:<binary>. Adding a terminal means
+# adding a row plus a theme_<id> function (dashes become underscores) — the
+# detection loop, the theme loop and relaunch all read this table.
+DARKY_TERMINAL_TABLE=(
+    "konsole:konsole"
+    "kitty:kitty"
+    "alacritty:alacritty"
+    "wezterm:wezterm"
+    "foot:foot"
+    "ghostty:ghostty"
+    "blackbox:blackbox-terminal"
+    "tilix:tilix"
+    "gnome-terminal:gnome-terminal"
+    "xfce4-terminal:xfce4-terminal"
+    "terminator:terminator"
+    "xterm:xterm"
+    "urxvt:urxvt"
+    "st:st"
+)
+
+# Terminals that are themed by another terminal's writer:
+# <terminal-id>:<writer-id>
+DARKY_TERMINAL_WRITER_ALIASES=(
+    "urxvt:xterm"
+    "st:xterm"
+)
+
 # ─── Detect every terminal emulator present ───
 # Fills the TERMINALS array with ids of installed terminals.
 detect_terminals() {
     TERMINALS=()
-    local t
-    for t in konsole kitty alacritty wezterm foot ghostty xterm; do
-        if command -v "$t" &>/dev/null; then
-            TERMINALS+=("$t")
+    local entry name cmd
+    for entry in "${DARKY_TERMINAL_TABLE[@]}"; do
+        name="${entry%%:*}"
+        cmd="${entry#*:}"
+        if command -v "$cmd" &>/dev/null; then
+            case " ${TERMINALS[*]} " in
+                *" $name "*) ;;
+                *) TERMINALS+=("$name") ;;
+            esac
         fi
     done
-    # Flatpak / snap fallbacks
-    if [ ${#TERMINALS[@]} -eq 0 ]; then
-        if command -v flatpak &>/dev/null && flatpak list 2>/dev/null | grep -qi "konsole"; then
-            TERMINALS+=("konsole")
-        fi
+
+    # BlackBox from Flathub has no `blackbox-terminal` binary on PATH.
+    if ! command -v blackbox-terminal &>/dev/null \
+       && command -v flatpak &>/dev/null \
+       && flatpak list 2>/dev/null | grep -qi 'com\.raggesilver\.BlackBox'; then
+        TERMINALS+=("blackbox")
+    fi
+
+    # Konsole from Flatpak/Snap as a last resort.
+    if [ ${#TERMINALS[@]} -eq 0 ] \
+       && command -v flatpak &>/dev/null \
+       && flatpak list 2>/dev/null | grep -qi 'konsole'; then
+        TERMINALS+=("konsole")
     fi
     export TERMINALS
 }
@@ -515,6 +570,27 @@ DARKY_THEME_ENV="${DARKY_THEME:-}"
 DARKY_THEME="blue"
 DARKY_THEME_CHOSEN=0
 
+# ─── Small colour helpers (hex <-> rgb) ───────
+# Everything fastfetch-related is derived from a single accent colour per
+# theme, so all four themes share exactly the same ramp logic.
+darky_hex_rgb() {
+    local h="${1#\#}"
+    DARKY_HEX_R=$((16#${h:0:2}))
+    DARKY_HEX_G=$((16#${h:2:2}))
+    DARKY_HEX_B=$((16#${h:4:2}))
+}
+
+# darky_hex_mix <a> <b> <percent-of-b>
+# 0% -> a, 100% -> b. Rounds to the nearest channel value.
+darky_hex_mix() {
+    local a="${1#\#}" b="${2#\#}" pct="${3:-50}"
+    darky_hex_rgb "$a"; local ar=$DARKY_HEX_R ag=$DARKY_HEX_G ab=$DARKY_HEX_B
+    darky_hex_rgb "$b"; local br=$DARKY_HEX_R bg=$DARKY_HEX_G bb=$DARKY_HEX_B
+    DARKY_MIX_R=$(( (ar * (100 - pct) + br * pct + 50) / 100 ))
+    DARKY_MIX_G=$(( (ag * (100 - pct) + bg * pct + 50) / 100 ))
+    DARKY_MIX_B=$(( (ab * (100 - pct) + bb * pct + 50) / 100 ))
+}
+
 set_theme_palette() {
     case "${1,,}" in
         blue)
@@ -531,14 +607,8 @@ set_theme_palette() {
                 "3b4048" "e06c75" "98c379" "e5c07b"
                 "61afef" "c678dd" "56b6c2" "ffffff"
             )
-            # fastfetch configs ship pre-coloured for Blue; nothing to rewrite.
-            DARKY_FF_APPLY=0
-            DARKY_FF_USER="216;227;243"
-            DARKY_FF_ACCENT="148;185;248"
-            DARKY_FF_DIM="107;127;160"
-            DARKY_FF_R0=197 DARKY_FF_G0=218 DARKY_FF_B0=255
-            DARKY_FF_R1=59 DARKY_FF_G1=90 DARKY_FF_B1=138
-            DARKY_FF_ACCENT_HEX="94B9F8"
+            # fastfetch is derived from this accent: pale tint -> accent.
+            DARKY_ACCENT="94B9F8"
             ;;
         orange)
             # Accent is Papirus' deep orange (#e95420, highlight #eb6637),
@@ -556,13 +626,8 @@ set_theme_palette() {
                 "3d302a" "e06c75" "98c379" "e5c07b"
                 "ff8a5c" "c678dd" "56b6c2" "fff4e8"
             )
-            DARKY_FF_APPLY=1
-            DARKY_FF_USER="255;210;176"
-            DARKY_FF_ACCENT="240;147;95"
-            DARKY_FF_DIM="154;120;97"
-            DARKY_FF_R0=255 DARKY_FF_G0=210 DARKY_FF_B0=176
-            DARKY_FF_R1=138 DARKY_FF_G1=69 DARKY_FF_B1=32
-            DARKY_FF_ACCENT_HEX="F0935F"
+            # Same vivid orange as the folder icons / Papirus highlight.
+            DARKY_ACCENT="E95420"
             ;;
         purple)
             # Dracula's official ANSI palette.
@@ -579,13 +644,7 @@ set_theme_palette() {
                 "6272a4" "ff6e6e" "69ff94" "ffffa5"
                 "d6acff" "ff92df" "a4ffff" "ffffff"
             )
-            DARKY_FF_APPLY=1
-            DARKY_FF_USER="233;214;255"
-            DARKY_FF_ACCENT="189;147;249"
-            DARKY_FF_DIM="98;114;164"
-            DARKY_FF_R0=233 DARKY_FF_G0=214 DARKY_FF_B0=255
-            DARKY_FF_R1=75 DARKY_FF_G1=55 DARKY_FF_B1=120
-            DARKY_FF_ACCENT_HEX="BD93F9"
+            DARKY_ACCENT="BD93F9"
             ;;
         green)
             # Same pastel structure as Blue, with a pastel green accent.
@@ -602,16 +661,37 @@ set_theme_palette() {
                 "3b4048" "e06c75" "98c379" "e5c07b"
                 "b4e8b8" "c678dd" "56b6c2" "ffffff"
             )
-            DARKY_FF_APPLY=1
-            DARKY_FF_USER="220;251;224"
-            DARKY_FF_ACCENT="157;214;164"
-            DARKY_FF_DIM="110;156;120"
-            DARKY_FF_R0=220 DARKY_FF_G0=251 DARKY_FF_B0=224
-            DARKY_FF_R1=62 DARKY_FF_G1=107 DARKY_FF_B1=71
-            DARKY_FF_ACCENT_HEX="9DD6A4"
+            DARKY_ACCENT="9DD6A4"
             ;;
         *) return 1 ;;
     esac
+
+    # ─── fastfetch ramp: pale tint -> pure accent ───
+    # 15 steps so every module key gets its own shade (Host palest,
+    # Disk = the accent itself). The username in the title line is a
+    # lighter tint, and the "@" separator a dimmed accent.
+    darky_hex_rgb "$DARKY_ACCENT"
+    DARKY_ACCENT_R=$DARKY_HEX_R
+    DARKY_ACCENT_G=$DARKY_HEX_G
+    DARKY_ACCENT_B=$DARKY_HEX_B
+    local ar=$DARKY_ACCENT_R ag=$DARKY_ACCENT_G ab=$DARKY_ACCENT_B
+    local sr sg sb i
+    darky_hex_mix "$DARKY_ACCENT" "ffffff" 68
+    sr=$DARKY_MIX_R; sg=$DARKY_MIX_G; sb=$DARKY_MIX_B
+
+    DARKY_FF_RAMP=()
+    for (( i = 0; i < 15; i++ )); do
+        DARKY_FF_RAMP+=(
+            "$(( sr + (ar - sr) * i / 14 ));$(( sg + (ag - sg) * i / 14 ));$(( sb + (ab - sb) * i / 14 ))"
+        )
+    done
+
+    darky_hex_mix "$DARKY_ACCENT" "ffffff" 55
+    DARKY_FF_USER="${DARKY_MIX_R};${DARKY_MIX_G};${DARKY_MIX_B}"
+
+    darky_hex_mix "$DARKY_ACCENT" "$DARKY_BG" 35
+    DARKY_FF_DIM="${DARKY_MIX_R};${DARKY_MIX_G};${DARKY_MIX_B}"
+
     return 0
 }
 
@@ -771,6 +851,157 @@ alacritty_add_import() {
     ' "$file" > "$file.darky-tmp" && mv "$file.darky-tmp" "$file"
 }
 
+# Extract "major.minor" from `alacritty --version` (e.g. "alacritty 0.17.0").
+alacritty_version() {
+    alacritty --version 2>/dev/null | head -n1 | awk '{print $2}'
+}
+
+# Alacritty >= 0.14 moved `import` into the [general] table. The old top-level
+# key still works for a while, but 0.16+ prints a deprecation warning.
+alacritty_supports_general_import() {
+    local v major minor
+    v="$(alacritty_version)"
+    [ -n "$v" ] || return 1
+    major="${v%%.*}"
+    minor="${v#*.}"
+    minor="${minor%%.*}"
+    [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ ]] || return 1
+    (( major > 0 || (major == 0 && minor >= 14) ))
+}
+
+# True when a deprecated top-level `import = ...` key is present (top-level
+# keys live before the first [table] header).
+alacritty_has_top_level_import() {
+    awk '
+        /^[[:space:]]*\[/ { exit }
+        /^[[:space:]]*import[[:space:]]*=/ { found = 1; exit }
+        END { exit(found ? 0 : 1) }
+    ' "$1"
+}
+
+# Move every import (the old top-level key and/or an existing
+# [general].import array) into one [general].import array that also contains
+# darky.toml. Everything else in the file is preserved as-is.
+alacritty_ensure_general_import() {
+    local file="$1"
+    local p="$2"
+    local tmp="$file.darky-tmp"
+
+    awk -v p="$p" '
+        # Collect the double-quoted paths of an import statement into items[].
+        function collect(text,    s) {
+            while (match(text, /"[^"]*"/)) {
+                s = substr(text, RSTART + 1, RLENGTH - 2)
+                if (!(s in seen)) {
+                    seen[s] = 1
+                    items[++count] = s
+                }
+                text = substr(text, RSTART + RLENGTH)
+            }
+        }
+        # Last line of a TOML array that starts on `start` (bracket balance).
+        function stmt_end(start,    i, j, line, ch, k, bal, opened) {
+            bal = 0
+            opened = 0
+            for (i = start; i <= total; i++) {
+                line = L[i]
+                gsub(/"[^"]*"/, "", line)
+                for (k = 1; k <= length(line); k++) {
+                    ch = substr(line, k, 1)
+                    if (ch == "[") {
+                        bal++
+                        opened = 1
+                    } else if (ch == "]") {
+                        bal--
+                    }
+                }
+                if (opened && bal <= 0)
+                    return i
+            }
+            return total
+        }
+        { L[++total] = $0 }
+        END {
+            # Section of every line ("" = top level).
+            section = ""
+            for (i = 1; i <= total; i++) {
+                if (L[i] ~ /^[[:space:]]*\[[[:space:]]*[A-Za-z0-9_.-]+[[:space:]]*\]/) {
+                    if (L[i] ~ /^[[:space:]]*\[[[:space:]]*general[[:space:]]*\]/ && !gen_hdr)
+                        gen_hdr = i
+                    section = L[i]
+                }
+                SEC[i] = section
+            }
+
+            # Deprecated top-level import (top-level keys come before tables).
+            for (i = 1; i <= total; i++) {
+                if (SEC[i] == "" && L[i] ~ /^[[:space:]]*import[[:space:]]*=/) {
+                    top_s = i
+                    top_e = stmt_end(i)
+                    break
+                }
+            }
+
+            # Existing [general].import (inside the table or as a dotted key).
+            for (i = 1; i <= total; i++) {
+                if (gen_hdr && i > gen_hdr && SEC[i] == "[general]" \
+                    && L[i] ~ /^[[:space:]]*import[[:space:]]*=/) {
+                    gi_s = i
+                    gi_e = stmt_end(i)
+                    break
+                }
+                if (L[i] ~ /^[[:space:]]*general\.import[[:space:]]*=/) {
+                    gi_s = i
+                    gi_e = stmt_end(i)
+                    break
+                }
+            }
+            # Never mistake the top-level statement for the general one.
+            if (gi_s && top_s && gi_s >= top_s && gi_s <= top_e) {
+                gi_s = 0
+                gi_e = 0
+            }
+
+            if (gi_s)
+                for (i = gi_s; i <= gi_e; i++)
+                    collect(L[i])
+            if (top_s)
+                for (i = top_s; i <= top_e; i++)
+                    collect(L[i])
+            if (!(p in seen)) {
+                seen[p] = 1
+                items[++count] = p
+            }
+
+            arr = ""
+            for (i = 1; i <= count; i++) {
+                if (i > 1)
+                    arr = arr ", "
+                arr = arr "\"" items[i] "\""
+            }
+            assignment = "import = [" arr "]"
+
+            inserted = 0
+            for (i = 1; i <= total; i++) {
+                if (top_s && i >= top_s && i <= top_e)
+                    continue
+                if (gi_s && i >= gi_s && i <= gi_e)
+                    continue
+                print L[i]
+                if (gen_hdr == i) {
+                    print assignment
+                    inserted = 1
+                }
+            }
+            if (!inserted) {
+                print ""
+                print "[general]"
+                print assignment
+            }
+        }
+    ' "$file" > "$tmp" 2>/dev/null && mv "$tmp" "$file"
+}
+
 theme_alacritty() {
     local dir="$HOME/.config/alacritty"
     local file="$dir/darky.toml"
@@ -813,6 +1044,8 @@ theme_alacritty() {
 
     local import_path='~/.config/alacritty/darky.toml'
     local main_cfg="$dir/alacritty.toml"
+    local general=0
+    alacritty_supports_general_import && general=1
 
     # Legacy YAML config: creating alacritty.toml would shadow (and effectively
     # wipe) the user's config, so leave it to them to migrate.
@@ -823,11 +1056,34 @@ theme_alacritty() {
     fi
 
     if [ ! -f "$main_cfg" ]; then
-        printf 'import = ["%s"]\n' "$import_path" > "$main_cfg"
+        if [ "$general" -eq 1 ]; then
+            printf '[general]\nimport = ["%s"]\n' "$import_path" > "$main_cfg"
+        else
+            printf 'import = ["%s"]\n' "$import_path" > "$main_cfg"
+        fi
         success "Alacritty: theme written and alacritty.toml created."
         return 0
     fi
 
+    # Alacritty 0.14+: import belongs to the [general] table. An old top-level
+    # import (ours or the user's) is migrated as well, otherwise 0.16+ keeps
+    # printing the deprecation warning.
+    if [ "$general" -eq 1 ]; then
+        if ! alacritty_has_top_level_import "$main_cfg" \
+           && grep -qF "darky.toml" "$main_cfg"; then
+            success "Alacritty: theme already imported via [general].import."
+            return 0
+        fi
+        if alacritty_ensure_general_import "$main_cfg" "$import_path"; then
+            success "Alacritty: theme imported into [general].import."
+        else
+            warn "Alacritty: could not add the import to $main_cfg."
+            warn "Add this to that file: [general] with import = [\"$import_path\"]"
+        fi
+        return 0
+    fi
+
+    # Older Alacritty: import is a top-level key.
     if grep -qF "darky.toml" "$main_cfg"; then
         success "Alacritty: theme updated (already imported)."
         return 0
@@ -1037,18 +1293,365 @@ theme_foot() {
     fi
 }
 
-# Xterm: Xresources
+# ─── Shared JSON scheme (BlackBox / Tilix) ────
+# Both apps use the same tiny JSON format, so one writer serves both.
+# The JSON lives in its own Darky-named file and is never merged into a
+# user file; uninstall just deletes Darky*.json.
+write_json_scheme() {
+    local file="$1"
+    local palette="" c
+    for c in "${DARKY_PALETTE[@]}"; do
+        palette+="\"#${c}\", "
+    done
+    palette="${palette%, }"
+
+    mkdir -p "$(dirname "$file")" 2>/dev/null || return 1
+    cat > "$file" <<EOF
+{
+  "name": "${DARKY_THEME_NAME}",
+  "comment": "Darky ${DARKY_THEME_NAME#Darky } — generated by the Darky installer",
+  "use-theme-colors": false,
+  "foreground-color": "#${DARKY_FG}",
+  "background-color": "#${DARKY_BG}",
+  "palette": [${palette}]
+}
+EOF
+}
+
+# BlackBox: JSON scheme + gsettings activation.
+# BlackBox only reads schemes at startup, so a freshly themed window needs a
+# restart; the gsettings write is verified to avoid claiming a false success.
+theme_blackbox() {
+    local flavor="native"
+    local schemes_dir="$HOME/.local/share/blackbox/schemes"
+    local -a gs=(gsettings)
+
+    if ! command -v blackbox-terminal &>/dev/null; then
+        if command -v flatpak &>/dev/null \
+           && flatpak list 2>/dev/null | grep -qi 'com\.raggesilver\.BlackBox'; then
+            flavor="flatpak"
+            schemes_dir="$HOME/.var/app/com.raggesilver.BlackBox/data/blackbox/schemes"
+            gs=(flatpak run --command=gsettings com.raggesilver.BlackBox)
+        else
+            warn "BlackBox: binary not found. Skipping."
+            return 0
+        fi
+    fi
+
+    mkdir -p "$schemes_dir" 2>/dev/null || {
+        warn "BlackBox: cannot create $schemes_dir."
+        return 0
+    }
+    rm -f "$schemes_dir"/Darky*.json 2>/dev/null || true
+    if ! write_json_scheme "$schemes_dir/${DARKY_SCHEME}.json"; then
+        warn "BlackBox: could not write the colour scheme."
+        return 0
+    fi
+    success "BlackBox: ${DARKY_THEME_NAME} scheme installed."
+
+    # Remember the pre-Darky values once, before the first overwrite.
+    if declare -F darky_extra_save >/dev/null; then
+        darky_extra_save BLACKBOX_FLAVOR "$flavor"
+        darky_extra_save BLACKBOX_PREV_DARK "$("${gs[@]}" get com.raggesilver.BlackBox theme-dark 2>/dev/null)"
+        darky_extra_save BLACKBOX_PREV_LIGHT "$("${gs[@]}" get com.raggesilver.BlackBox theme-light 2>/dev/null)"
+    fi
+
+    # Set both variants, so "follow system" picks Darky either way.
+    "${gs[@]}" set com.raggesilver.BlackBox theme-dark "$DARKY_THEME_NAME" 2>/dev/null || true
+    "${gs[@]}" set com.raggesilver.BlackBox theme-light "$DARKY_THEME_NAME" 2>/dev/null || true
+
+    local dark light
+    dark="$("${gs[@]}" get com.raggesilver.BlackBox theme-dark 2>/dev/null | tr -d "'")"
+    light="$("${gs[@]}" get com.raggesilver.BlackBox theme-light 2>/dev/null | tr -d "'")"
+    if [[ "$dark" == "$DARKY_THEME_NAME" && "$light" == "$DARKY_THEME_NAME" ]]; then
+        success "BlackBox: ${DARKY_THEME_NAME} set as the active theme."
+    else
+        warn "BlackBox: scheme written, but gsettings could not activate it."
+        if [ "$flavor" = "flatpak" ]; then
+            warn "Choose '${DARKY_THEME_NAME}' in BlackBox → Preferences → Appearance."
+        else
+            warn "Run: gsettings set com.raggesilver.BlackBox theme-dark \"${DARKY_THEME_NAME}\""
+        fi
+    fi
+
+    # Schemes are only read on startup.
+    if pgrep -x blackbox-termina >/dev/null 2>&1 || pgrep -f 'blackbox-terminal' >/dev/null 2>&1; then
+        info "BlackBox: restart BlackBox to see the new colours."
+    fi
+    return 0
+}
+
+# Tilix: same JSON scheme plus the active profile's gsettings colours.
+# Tilix stores colours inside each profile (not a scheme reference), so the
+# JSON alone would never show up until the user picked it manually.
+theme_tilix() {
+    local dirs=("$HOME/.config/tilix/schemes")
+    # Older Tilix releases looked in ~/.local/share; write there only when
+    # that tree already exists, to avoid duplicate entries in the UI.
+    [ -d "$HOME/.local/share/tilix" ] && dirs+=("$HOME/.local/share/tilix/schemes")
+
+    local d wrote=0
+    for d in "${dirs[@]}"; do
+        mkdir -p "$d" 2>/dev/null || continue
+        rm -f "$d"/Darky*.json 2>/dev/null || true
+        write_json_scheme "$d/${DARKY_SCHEME}.json" && wrote=1
+    done
+
+    if [ "$wrote" -eq 1 ]; then
+        success "Tilix: ${DARKY_THEME_NAME} scheme installed."
+    else
+        warn "Tilix: could not write the colour scheme."
+        return 0
+    fi
+
+    if ! command -v gsettings &>/dev/null \
+       || ! gsettings list-schemas 2>/dev/null | grep -qx 'com.gexperts.Tilix.Profile'; then
+        info "Tilix: pick '${DARKY_THEME_NAME}' in Preferences → Colors."
+        return 0
+    fi
+
+    local uuid path
+    uuid="$(darky_extra_get TILIX_PROFILE 2>/dev/null)"
+    if [ -z "$uuid" ]; then
+        uuid="$(gsettings get com.gexperts.Tilix.ProfilesList default 2>/dev/null | tr -d "'")"
+        [ -n "$uuid" ] && darky_extra_save TILIX_PROFILE "$uuid"
+    fi
+    if [ -z "$uuid" ]; then
+        warn "Tilix: no default profile found — choose the scheme manually."
+        return 0
+    fi
+
+    path="com.gexperts.Tilix.Profile:/com/gexperts/Tilix/profiles/${uuid}/"
+    if command -v dconf &>/dev/null \
+       && [ -z "$(dconf read "/com/gexperts/Tilix/profiles/${uuid}/visible-name" 2>/dev/null)" ]; then
+        warn "Tilix: profile ${uuid} not found — choose the scheme manually."
+        return 0
+    fi
+
+    # Snapshot once (first run wins), then set all relevant colours.
+    darky_extra_save TILIX_PREV_FG "$(gsettings get "$path" foreground-color 2>/dev/null)"
+    darky_extra_save TILIX_PREV_BG "$(gsettings get "$path" background-color 2>/dev/null)"
+    darky_extra_save TILIX_PREV_PALETTE "$(gsettings get "$path" palette 2>/dev/null)"
+    darky_extra_save TILIX_PREV_USE_THEME "$(gsettings get "$path" use-theme-colors 2>/dev/null)"
+
+    local palette="" c
+    for c in "${DARKY_PALETTE[@]}"; do
+        palette+="'#${c}', "
+    done
+    palette="[${palette%, }]"
+
+    gsettings set "$path" foreground-color "'#${DARKY_FG}'" 2>/dev/null || true
+    gsettings set "$path" background-color "'#${DARKY_BG}'" 2>/dev/null || true
+    gsettings set "$path" palette "$palette" 2>/dev/null || true
+    gsettings set "$path" use-theme-colors false 2>/dev/null || true
+
+    if [ "$(gsettings get "$path" background-color 2>/dev/null | tr -d "'" | tr '[:upper:]' '[:lower:]')" = "#${DARKY_BG,,}" ]; then
+        success "Tilix: ${DARKY_THEME_NAME} applied to profile ${uuid}."
+    else
+        warn "Tilix: scheme written but the profile colours could not be set."
+    fi
+    return 0
+}
+
+# GNOME Terminal / GNOME Console: a dedicated dconf profile named "Darky".
+# Creating our own profile (instead of recolouring the user's) keeps the
+# original untouched and makes uninstall a clean subtree removal.
+theme_gnome_terminal() {
+    if ! command -v dconf &>/dev/null \
+       || ! command -v gsettings &>/dev/null \
+       || ! gsettings list-schemas 2>/dev/null | grep -q '^org\.gnome\.Terminal'; then
+        warn "GNOME Terminal: no dconf/Terminal schema found. Skipping."
+        return 0
+    fi
+
+    local base="/org/gnome/terminal/legacy/profiles:"
+    local uuid
+    uuid="$(darky_extra_get GNOME_TERMINAL_UUID 2>/dev/null)"
+    if [ -z "$uuid" ]; then
+        uuid="$(cat /proc/sys/kernel/random/uuid 2>/dev/null)"
+        [ -n "$uuid" ] && darky_extra_save GNOME_TERMINAL_UUID "$uuid"
+    fi
+    if [ -z "$uuid" ]; then
+        warn "GNOME Terminal: could not generate a profile id."
+        return 0
+    fi
+
+    darky_extra_save GNOME_TERMINAL_PREV_DEFAULT "$(dconf read "${base}/default" 2>/dev/null)"
+
+    local palette="" c
+    for c in "${DARKY_PALETTE[@]}"; do
+        palette+="'#${c}', "
+    done
+    palette="[${palette%, }]"
+
+    dconf write "${base}/:${uuid}/visible-name" "'Darky'" 2>/dev/null || true
+    dconf write "${base}/:${uuid}/foreground-color" "'#${DARKY_FG}'" 2>/dev/null || true
+    dconf write "${base}/:${uuid}/background-color" "'#${DARKY_BG}'" 2>/dev/null || true
+    dconf write "${base}/:${uuid}/palette" "$palette" 2>/dev/null || true
+    dconf write "${base}/:${uuid}/use-theme-colors" "false" 2>/dev/null || true
+    dconf write "${base}/:${uuid}/bold-is-bright" "true" 2>/dev/null || true
+
+    # Make sure the profile is in the list and is the default.
+    local list
+    list="$(dconf read "${base}/list" 2>/dev/null)"
+    if [[ "$list" != *"${uuid}"* ]]; then
+        if [[ "$list" != *"'"* ]]; then
+            list="['${uuid}']"
+        else
+            list="${list%]}, '${uuid}']"
+        fi
+        dconf write "${base}/list" "$list" 2>/dev/null || true
+    fi
+    dconf write "${base}/default" "'${uuid}'" 2>/dev/null || true
+
+    if [[ "$(dconf read "${base}/default" 2>/dev/null)" == *"${uuid}"* ]]; then
+        success "GNOME Terminal: ${DARKY_THEME_NAME} profile set as default."
+    else
+        warn "GNOME Terminal: profile written but could not be set as default."
+        warn "Choose 'Darky' in Preferences → Profiles."
+    fi
+    return 0
+}
+
+# XFCE4-terminal: a .desktop preset (shows up in Preferences) plus xfconf,
+# which is the only way to actually apply colours on modern versions.
+theme_xfce4_terminal() {
+    local dir="$HOME/.config/xfce4/terminal/colorschemes"
+    mkdir -p "$dir" 2>/dev/null || true
+    rm -f "$dir"/Darky*.desktop 2>/dev/null || true
+
+    local palette="" c
+    for c in "${DARKY_PALETTE[@]}"; do
+        palette+="#${c};"
+    done
+    palette="${palette%;}"
+
+    cat > "$dir/${DARKY_SCHEME}.desktop" 2>/dev/null <<EOF
+[Scheme]
+Name=${DARKY_THEME_NAME}
+ColorForeground=#${DARKY_FG}
+ColorBackground=#${DARKY_BG}
+ColorCursor=#${DARKY_CURSOR}
+ColorPalette=${palette}
+EOF
+    if [ -f "$dir/${DARKY_SCHEME}.desktop" ]; then
+        success "XFCE4-terminal: ${DARKY_THEME_NAME} preset installed."
+    else
+        warn "XFCE4-terminal: could not write the colour preset."
+        return 0
+    fi
+
+    if ! command -v xfconf-query &>/dev/null \
+       || ! xfconf-query -c xfce4-terminal -l >/dev/null 2>&1; then
+        info "XFCE4-terminal: pick '${DARKY_THEME_NAME}' in Preferences → Colors."
+        return 0
+    fi
+
+    # xfconf arrays are hard to round-trip; snapshot each property first.
+    local p
+    for p in color-foreground color-background color-cursor color-palette; do
+        darky_extra_save "XFCE_PREV_${p//-/_}" "$(xfconf-query -c xfce4-terminal -p "/${p}" 2>/dev/null | paste -sd';')"
+    done
+
+    xfconf-query -c xfce4-terminal -p /color-foreground -s "#${DARKY_FG}" 2>/dev/null || true
+    xfconf-query -c xfce4-terminal -p /color-background -s "#${DARKY_BG}" 2>/dev/null || true
+    xfconf-query -c xfce4-terminal -p /color-cursor -s "#${DARKY_CURSOR}" 2>/dev/null || true
+
+    local current
+    current="$(xfconf-query -c xfce4-terminal -p /color-palette 2>/dev/null)"
+    if [ -z "$current" ] || printf '%s' "$current" | grep -q ';'; then
+        darky_extra_save XFCE_PALETTE_TYPE "string"
+        # Modern xfce4-terminal stores the palette as one ;-separated string.
+        xfconf-query -c xfce4-terminal -p /color-palette \
+            -t string -s "$palette" 2>/dev/null || true
+    else
+        darky_extra_save XFCE_PALETTE_TYPE "array"
+        # Older versions use a string array: rebuild it.
+        xfconf-query -c xfce4-terminal -p /color-palette -r 2>/dev/null || true
+        local -a pargs=()
+        for c in "${DARKY_PALETTE[@]}"; do
+            pargs+=(-t string -s "#${c}")
+        done
+        xfconf-query -c xfce4-terminal -p /color-palette "${pargs[@]}" 2>/dev/null || true
+    fi
+
+    if [ "$(xfconf-query -c xfce4-terminal -p /color-background 2>/dev/null)" = "#${DARKY_BG}" ]; then
+        success "XFCE4-terminal: ${DARKY_THEME_NAME} applied."
+    else
+        warn "XFCE4-terminal: preset written but xfconf colours could not be set."
+    fi
+    return 0
+}
+
+# Terminator: INI file. Terminator is a Python app, so python3 is guaranteed
+# whenever this function runs; configparser preserves all unrelated keys.
+theme_terminator() {
+    local cfg="$HOME/.config/terminator/config"
+    if ! command -v python3 &>/dev/null; then
+        warn "Terminator: python3 not found. Skipping."
+        return 0
+    fi
+
+    mkdir -p "$(dirname "$cfg")" 2>/dev/null || true
+    local palette="" c
+    for c in "${DARKY_PALETTE[@]}"; do
+        palette+="#${c}:"
+    done
+    palette="${palette%:}"
+
+    DARKY_TERM_CFG="$cfg" DARKY_TERM_BG="$DARKY_BG" DARKY_TERM_FG="$DARKY_FG" \
+    DARKY_TERM_CURSOR="$DARKY_CURSOR" DARKY_TERM_PALETTE="$palette" \
+    python3 - <<'PY' 2>/dev/null
+import configparser, os, sys
+
+path = os.environ["DARKY_TERM_CFG"]
+cp = configparser.RawConfigParser(strict=False, allow_no_value=True)
+cp.optionxform = str
+if os.path.exists(path):
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        cp.read_file(fh)
+
+if not cp.has_section("profiles"):
+    cp.add_section("profiles")
+section = "[default]"
+if not cp.has_section(section):
+    cp.add_section(section)
+
+values = {
+    "background_color": "#" + os.environ["DARKY_TERM_BG"],
+    "foreground_color": "#" + os.environ["DARKY_TERM_FG"],
+    "cursor_color": "#" + os.environ["DARKY_TERM_CURSOR"],
+    "palette": os.environ["DARKY_TERM_PALETTE"],
+    "use_theme_colors": "False",
+    "bold_is_bright": "True",
+}
+for key, value in values.items():
+    cp.set(section, key, value)
+
+with open(path, "w", encoding="utf-8") as fh:
+    cp.write(fh, space_around_delimiters=True)
+PY
+
+    if grep -q '^[[:space:]]*background_color' "$cfg" 2>/dev/null; then
+        success "Terminator: ${DARKY_THEME_NAME} written to config."
+        info "Terminator: open a new window to see the colours."
+    else
+        warn "Terminator: could not update $cfg."
+    fi
+    return 0
+}
+
+# Generic Xresources writer: xterm, urxvt and st all read the same file.
+# The block is marker-delimited so uninstall/theme switches can remove exactly
+# what Darky wrote without touching the user's other resources.
 theme_xterm() {
     local file="$HOME/.Xresources"
     touch "$file" 2>/dev/null || { warn "Xterm: cannot write $file."; return 0; }
 
-    # Drop a block left by an earlier run (possibly another theme colour).
-    # The block is a marker line followed by XTerm* settings; anything the user
-    # wrote after it is preserved.
     if grep -qF "! Darky theme" "$file" 2>/dev/null; then
         awk '
             $0 == "! Darky theme — generated by Darky installer" { drop = 1; next }
-            drop && /^XTerm\*/ { next }
+            drop && /^(XTerm|URxvt|St)[*.]/ { next }
             { drop = 0; print }
         ' "$file" > "$file.darky-tmp" 2>/dev/null \
             && mv "$file.darky-tmp" "$file" \
@@ -1057,14 +1660,20 @@ theme_xterm() {
 
     {
         echo "! Darky theme — generated by Darky installer"
-        echo "XTerm*background: #${DARKY_BG}"
-        echo "XTerm*foreground: #${DARKY_FG}"
-        echo "XTerm*cursorColor: #${DARKY_CURSOR}"
+        local prefix i
+        for prefix in "XTerm" "URxvt" "St"; do
+            echo "${prefix}*background: #${DARKY_BG}"
+            echo "${prefix}*foreground: #${DARKY_FG}"
+            echo "${prefix}*cursorColor: #${DARKY_CURSOR}"
+            for i in "${!DARKY_PALETTE[@]}"; do
+                echo "${prefix}*color${i}: #${DARKY_PALETTE[$i]}"
+            done
+        done
         echo "XTerm*faceName: JetBrains Mono"
         echo "XTerm*faceSize: 11"
     } >> "$file"
     command -v xrdb &>/dev/null && xrdb -merge "$file" 2>/dev/null || true
-    success "Xterm: ${DARKY_THEME_NAME} colours written to ~/.Xresources."
+    success "Xterm/urxvt/st: ${DARKY_THEME_NAME} colours written to ~/.Xresources."
 }
 
 # Fish needs its own init line (not eval "$(...)"), so keep it in one place:
@@ -1113,7 +1722,7 @@ install_terminal_theme() {
 
     detect_terminals
     if [ ${#TERMINALS[@]} -eq 0 ]; then
-        warn "No supported terminal found (konsole/kitty/alacritty/wezterm/foot/ghostty/xterm)."
+        warn "No supported terminal found (konsole/kitty/alacritty/wezterm/foot/ghostty/blackbox/tilix/gnome-terminal/xfce4-terminal/terminator/xterm)."
         warn "Skipping terminal theme."
         return
     fi
@@ -1135,26 +1744,42 @@ install_terminal_theme() {
         warn "darky-terminal-state.sh not found — previous terminal will not be restored on uninstall."
     fi
 
-    local t
+    # One writer can cover several binaries (theme_xterm writes XTerm*,
+    # URxvt* and St* in a single ~/.Xresources block). Resolve aliases and
+    # run every writer exactly once.
+    local t fn entry
+    local -a writers=()
     for t in "${TERMINALS[@]}"; do
-        case "$t" in
-            konsole)   run_step "konsole theme"   theme_konsole ;;
-            kitty)     run_step "kitty theme"     theme_kitty ;;
-            alacritty) run_step "alacritty theme" theme_alacritty ;;
-            wezterm)   run_step "wezterm theme"   theme_wezterm ;;
-            foot)      run_step "foot theme"      theme_foot ;;
-            ghostty)   run_step "ghostty theme"   theme_ghostty ;;
-            xterm)     run_step "xterm theme"     theme_xterm ;;
-            *)         warn "No theme writer for '${t}'. Skipping." ;;
+        fn="theme_${t//-/_}"
+        for entry in "${DARKY_TERMINAL_WRITER_ALIASES[@]}"; do
+            [ "${entry%%:*}" = "$t" ] && fn="theme_${entry#*:}"
+        done
+        case " ${writers[*]} " in
+            *" $fn "*) continue ;;
         esac
+        writers+=("$fn")
     done
+
+    for fn in "${writers[@]}"; do
+        if declare -F "$fn" >/dev/null; then
+            run_step "${fn#theme_} theme" "$fn"
+        else
+            warn "No theme writer for '${fn#theme_}'. Skipping."
+        fi
+    done
+
+    # Konsole only shows the colour scheme when the Darky profile is the one it
+    # opens with, so wiring the default profile is part of the same step.
+    if [[ " ${TERMINALS[*]} " == *" konsole "* ]]; then
+        run_step "konsole profile" apply_konsole_profile
+    fi
 
     # Only wire up fish when the user actually chose it — otherwise we would
     # silently create ~/.config/fish/config.fish for bash/zsh users.
     if [[ "$CHOSEN_SHELL" == "fish" ]]; then
         run_step "fish setup" setup_fish
     fi
-    success "Terminal theming done."
+    success "Terminal theming done (${DARKY_THEME_NAME})."
 }
 
 # ─── Step 4: Fastfetch ────────────────────────
@@ -1217,13 +1842,15 @@ install_fastfetch() {
         done
         success "fastfetch configs copied (${DARKY_THEME_NAME})."
 
-        # Some dotfile setups (ml4w/Hyprland) run bare `fastfetch` on shell start,
-        # which reads config.jsonc — not config-startup.jsonc. Point it at our logo.
-        run_step "fastfetch logo" apply_fastfetch_logo
-
-        # The shipped configs are pre-coloured for Blue; other themes rewrite the
-        # colour tokens in place so fastfetch matches the terminal.
+        # Rebuild the module-key colour ramp from the chosen theme accent
+        # (pale at the top, pure accent on Disk).
         run_step "fastfetch theme" apply_fastfetch_theme
+
+        # Some dotfile setups (ml4w/Hyprland) run bare `fastfetch` on shell start,
+        # which reads config.jsonc — not config-startup.jsonc. Point it at our
+        # logo. This runs AFTER the theme step on purpose: that step restores
+        # the config template, so the logo must be enforced last.
+        run_step "fastfetch logo" apply_fastfetch_logo
 
         STARTUP_LINE="fastfetch --config $HOME/.config/fastfetch/config-startup.jsonc"
 
@@ -1291,11 +1918,6 @@ apply_fastfetch_logo() {
 # Running this again on a fresh copy is safe — the tokens are rewritten from
 # scratch each install, so switching theme never stacks up.
 apply_fastfetch_theme() {
-    if [ "${DARKY_FF_APPLY:-0}" != "1" ]; then
-        info "Fastfetch: configs already ship the ${DARKY_THEME_NAME} colours."
-        return 0
-    fi
-
     local cfg="$HOME/.config/fastfetch/config.jsonc"
     local startup="$HOME/.config/fastfetch/config-startup.jsonc"
 
@@ -1304,28 +1926,35 @@ apply_fastfetch_theme() {
         return 0
     fi
 
-    # Module keys fade from the light tone (R0/G0/B0) into the dim tone
-    # (R1/G1/B1) over 10 steps, same light→dark direction as the Blue config.
-    local codes=(75 74 73 72 71 69 68 67 66 65)
-    local i r g b
+    # Always start from the shipped template. It carries a neutral 15-step
+    # grey ramp (codes 255..241) that is replaced by the theme ramp below, so
+    # this function is idempotent and switching themes never leaves a mix of
+    # old and new colours behind.
+    if [ -f "$TMP_DIR/config.jsonc" ]; then
+        cp "$TMP_DIR/config.jsonc" "$cfg" 2>/dev/null \
+            || warn "Fastfetch: could not restore the config template."
+    fi
+
+    # Module keys fade from a pale tint of the accent (Host) down to the
+    # accent itself (Disk): 15 modules, 15 steps.
     local -a args=()
-    for i in "${!codes[@]}"; do
-        r=$(( DARKY_FF_R0 + (DARKY_FF_R1 - DARKY_FF_R0) * i / 9 ))
-        g=$(( DARKY_FF_G0 + (DARKY_FF_G1 - DARKY_FF_G0) * i / 9 ))
-        b=$(( DARKY_FF_B0 + (DARKY_FF_B1 - DARKY_FF_B0) * i / 9 ))
-        args+=(-e "s/38;5;${codes[$i]}m/38;2;${r};${g};${b}m/g")
+    local i code
+    for i in "${!DARKY_FF_RAMP[@]}"; do
+        code=$((255 - i))
+        args+=(-e "s/38;5;${code}m/38;2;${DARKY_FF_RAMP[$i]}m/g")
     done
 
     # Title line: bright cyan is the user name, bright blue the host name.
     args+=(-e "s/\[96m/[38;2;${DARKY_FF_USER}m/g")
-    args+=(-e "s/\[94m/[38;2;${DARKY_FF_ACCENT}m/g")
+    args+=(-e "s/\[94m/[38;2;${DARKY_ACCENT_R};${DARKY_ACCENT_G};${DARKY_ACCENT_B}m/g")
     # The "@" separator and display.color.separator.
     args+=(-e "s/38;5;61m/38;2;${DARKY_FF_DIM}m/g")
-    # display.color.title (named colour -> hex, so any theme accent works).
-    args+=(-e "s/\"title\":[[:space:]]*\"cyan\"/\"title\": \"#${DARKY_FF_ACCENT_HEX}\"/")
+    args+=(-e "s/\"separator\":[[:space:]]*\"38;5;61\"/\"separator\": \"38;2;${DARKY_FF_DIM}\"/")
+    # display.color.title (any previous value -> this theme's accent).
+    args+=(-e "s/\"title\":[[:space:]]*\"[^\"]*\"/\"title\": \"#${DARKY_ACCENT}\"/")
 
     if sed -i "${args[@]}" "$cfg" 2>/dev/null; then
-        success "Fastfetch: config.jsonc recoloured for ${DARKY_THEME_NAME}."
+        success "Fastfetch: colour ramp rebuilt for ${DARKY_THEME_NAME}."
     else
         warn "Fastfetch: could not recolour config.jsonc."
         return 0
@@ -1333,7 +1962,11 @@ apply_fastfetch_theme() {
 
     if [ -f "$startup" ]; then
         # Logo colour of the startup config (the bat is drawn in one colour).
-        if sed -i -E "s/#5B9BD5/#${DARKY_FF_ACCENT_HEX}/g" "$startup" 2>/dev/null; then
+        # The template uses #5B9BD5; on a re-run the previous accent may be
+        # there instead, so both are replaced.
+        sed -i -E -e "s/#5B9BD5/#${DARKY_ACCENT}/Ig" \
+                  -e "s/#[0-9A-Fa-f]{6}/#${DARKY_ACCENT}/g" "$startup" 2>/dev/null
+        if grep -qi "#${DARKY_ACCENT}" "$startup" 2>/dev/null; then
             success "Fastfetch: startup logo colour set to ${DARKY_THEME_NAME}."
         else
             warn "Fastfetch: could not recolour config-startup.jsonc."
@@ -1504,12 +2137,9 @@ cleanup() {
 # ─── Auto-apply: set Darky as default terminal profile ─────
 
 apply_konsole_profile() {
-    # Konsole config only exists on KDE. On Hyprland / other WMs Konsole
-    # either isn't installed or isn't configured through konsolerc.
-    if [[ "$DESKTOP" != "kde" ]]; then
-        info "Not a KDE session. Skipping Konsole default-profile setup."
-        return 0
-    fi
+    # Konsole can be installed on any desktop (KDE, GNOME, Hyprland…), and the
+    # theme files are copied there regardless — so no desktop gate here, only
+    # "is Konsole actually installed".
     if ! command -v konsole &>/dev/null; then
         info "Konsole is not installed. Skipping default-profile setup."
         return 0
@@ -1518,27 +2148,37 @@ apply_konsole_profile() {
     local profile_name="Darky"
     local konsolerc="$HOME/.config/konsolerc"
 
+    mkdir -p "$(dirname "$konsolerc")" 2>/dev/null || true
+
+    # Preferred: KDE's own tool (creates the group when it is missing).
     detect_kwrite
     if [ -n "$KWRITE" ]; then
         $KWRITE --file "$konsolerc" \
             --group "Desktop Entry" \
             --key "DefaultProfile" "${profile_name}.profile" 2>/dev/null || true
-        success "${DARKY_THEME_NAME} set as default Konsole profile."
-    else
-        mkdir -p "$(dirname "$konsolerc")"
-        if [ -f "$konsolerc" ]; then
-            if grep -q "DefaultProfile" "$konsolerc"; then
-                sed -i "s/^DefaultProfile=.*/DefaultProfile=${profile_name}.profile/" "$konsolerc"
-            elif grep -q "\[Desktop Entry\]" "$konsolerc"; then
-                sed -i "/\[Desktop Entry\]/a DefaultProfile=${profile_name}.profile" "$konsolerc"
-            else
-                echo -e "\n[Desktop Entry]\nDefaultProfile=${profile_name}.profile" >> "$konsolerc"
-            fi
-        else
-            echo -e "[Desktop Entry]\nDefaultProfile=${profile_name}.profile" > "$konsolerc"
-        fi
-        success "${DARKY_THEME_NAME} set as default Konsole profile (manual edit)."
     fi
+
+    # Verify — kwriteconfig can fail silently (read-only file, foreign format),
+    # and an unverified "success" is exactly how the theme used to end up
+    # written but never selected. Fall back to a plain edit if needed.
+    if ! grep -qx "DefaultProfile=${profile_name}.profile" "$konsolerc" 2>/dev/null; then
+        if grep -q "^DefaultProfile=" "$konsolerc" 2>/dev/null; then
+            sed -i "s/^DefaultProfile=.*/DefaultProfile=${profile_name}.profile/" "$konsolerc" 2>/dev/null || true
+        elif grep -q "^\[Desktop Entry\]" "$konsolerc" 2>/dev/null; then
+            sed -i "/^\[Desktop Entry\]/a DefaultProfile=${profile_name}.profile" "$konsolerc" 2>/dev/null || true
+        else
+            printf '\n[Desktop Entry]\nDefaultProfile=%s.profile\n' "$profile_name" 2>/dev/null >> "$konsolerc" || true
+        fi
+    fi
+
+    if grep -qx "DefaultProfile=${profile_name}.profile" "$konsolerc" 2>/dev/null; then
+        success "${DARKY_THEME_NAME} set as default Konsole profile."
+        return 0
+    fi
+
+    warn "Konsole: could not set Darky as the default profile."
+    warn "Open Konsole → Settings → Configure Konsole → Profiles and pick 'Darky'."
+    return 1
 }
 
 # ─── Shell: make the chosen shell actually active ─────────
@@ -1985,7 +2625,13 @@ apply_shell_rc() {
 # ─── Relaunch terminal with Darky profile ──────
 
 relaunch_terminal() {
-    local term="${TERMINALS[0]:-}"
+    # Prefer the emulator this installer was actually started from; the first
+    # entry in TERMINALS is only a fallback (e.g. when run from a TTY).
+    local term=""
+    if declare -F darky_detect_current_terminal >/dev/null; then
+        term="$(darky_detect_current_terminal)"
+    fi
+    [ -n "$term" ] || term="${TERMINALS[0]:-}"
     if [ -z "$term" ]; then
         warn "No terminal found. Please restart your terminal manually."
         return 0
@@ -2011,6 +2657,34 @@ relaunch_terminal() {
         ghostty)
             nohup ghostty &>/dev/null &
             ;;
+        blackbox)
+            if command -v blackbox-terminal &>/dev/null; then
+                nohup blackbox-terminal &>/dev/null &
+            else
+                nohup flatpak run com.raggesilver.BlackBox &>/dev/null &
+            fi
+            ;;
+        tilix)
+            nohup tilix &>/dev/null &
+            ;;
+        gnome-terminal)
+            nohup gnome-terminal &>/dev/null &
+            ;;
+        xfce4-terminal)
+            nohup xfce4-terminal &>/dev/null &
+            ;;
+        terminator)
+            nohup terminator &>/dev/null &
+            ;;
+        xterm)
+            nohup xterm &>/dev/null &
+            ;;
+        urxvt)
+            nohup urxvt &>/dev/null &
+            ;;
+        st)
+            nohup st &>/dev/null &
+            ;;
         *)
             warn "Don't know how to relaunch '${term}'. Restart it manually."
             return 0
@@ -2019,10 +2693,11 @@ relaunch_terminal() {
     disown 2>/dev/null || true
     success "New terminal window opened with Darky theme."
 
-    # Close the old window only if we were launched from that same terminal
+    # Close the old window only if we were launched from that same terminal.
+    # `comm` is truncated to 15 chars, so compare the prefix.
     local parent_name
     parent_name="$(ps -o comm= -p $PPID 2>/dev/null || true)"
-    if [[ "$parent_name" == "$term" ]]; then
+    if [[ -n "$parent_name" && "$parent_name" == "$term"* ]]; then
         sleep 1
         kill -TERM $PPID 2>/dev/null || true
     fi
@@ -2087,6 +2762,7 @@ main() {
     # These two are the only fatal prerequisites: without a known distro or
     # without the repo files there is nothing to install.
     detect_distro
+    detect_desktop
     check_git
     clone_repo
 
@@ -2107,7 +2783,6 @@ main() {
     echo -e "${GREEN}${BOLD}✔ Installation complete!${RESET}  (${DARKY_THEME_NAME} theme)"
     echo ""
 
-    run_step "konsole profile"  apply_konsole_profile
     run_step "hyprland config"  apply_hyprland_config
     run_step "shell rc"         apply_shell_rc
     run_step "shell default"    apply_shell_default   # chsh + ml4w terminal launcher + rc wiring + migration

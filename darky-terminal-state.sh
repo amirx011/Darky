@@ -28,8 +28,10 @@ darky_detect_current_terminal() {
     if [ -n "${PPID:-}" ]; then
         t="$(ps -o comm= -p "${PPID}" 2>/dev/null | tr -d '[:space:]')"
         case "$t" in
-            konsole|kitty|alacritty|wezterm|foot|ghostty|xterm|terminator|tilix)
+            konsole|kitty|alacritty|wezterm|foot|ghostty|xterm|terminator|tilix|gnome-terminal|xfce4-terminal|urxvt|st)
                 echo "$t"; return 0 ;;
+            blackbox*)
+                echo "blackbox"; return 0 ;;
         esac
     fi
 
@@ -37,8 +39,10 @@ darky_detect_current_terminal() {
     if [ -n "${TERMINAL:-}" ]; then
         t="$(basename "$(echo "${TERMINAL}" | awk '{print $1}')")"
         case "$t" in
-            konsole|kitty|alacritty|wezterm|foot|ghostty|xterm|terminator|tilix)
+            konsole|kitty|alacritty|wezterm|foot|ghostty|xterm|terminator|tilix|gnome-terminal|xfce4-terminal|urxvt|st)
                 echo "$t"; return 0 ;;
+            blackbox*)
+                echo "blackbox"; return 0 ;;
         esac
     fi
 
@@ -48,8 +52,9 @@ darky_detect_current_terminal() {
     fi
 
     # 4) First installed emulator
-    for t in konsole kitty alacritty wezterm foot ghostty xterm; do
+    for t in konsole kitty alacritty wezterm foot ghostty blackbox-terminal tilix gnome-terminal xfce4-terminal terminator xterm urxvt st; do
         if command -v "$t" >/dev/null 2>&1; then
+            [ "$t" = "blackbox-terminal" ] && t="blackbox"
             echo "$t"; return 0
         fi
     done
@@ -128,6 +133,12 @@ darky_save_terminal_state() {
         [ -f "$f" ] || continue
         cp "$f" "$DARKY_STATE_DIR/$(basename "$f").darky-orig" 2>/dev/null || true
     done
+
+    # Terminator's file is called "config" (too generic for the loop above).
+    if [ -f "$HOME/.config/terminator/config" ]; then
+        cp "$HOME/.config/terminator/config" \
+           "$DARKY_STATE_DIR/terminator-config.darky-orig" 2>/dev/null || true
+    fi
 
     # Snapshot the colour theme separately, so the user can later choose
     # between "my old theme" and "system default" instead of only all-or-nothing.
@@ -258,6 +269,9 @@ darky_restore_theme_only() {
         cp "$orig" "$target" 2>/dev/null && did=1
     done
 
+    # gsettings/dconf/xfconf colours (BlackBox, Tilix, GNOME, XFCE).
+    darky_restore_extras
+
     if [ "$did" -eq 1 ]; then
         _darky_success "Colour themes restored (rest of the config kept)."
         return 0
@@ -274,11 +288,129 @@ darky_state_get() {
     grep -m1 "^${key}=" "$state" 2>/dev/null | cut -d= -f2- || true
 }
 
+# ─── Extra-terminal snapshot (gsettings / dconf / xfconf) ───
+# BlackBox, Tilix, GNOME Terminal and XFCE4-terminal store colours outside
+# plain config files. Their pre-Darky values go into one "first snapshot wins"
+# file, exactly like terminal-state, so re-running the installer never
+# overwrites the real originals with already-themed values.
+DARKY_EXTRA_FILE="$DARKY_STATE_DIR/terminal-extras"
+
+darky_extra_get() {
+    local key="$1"
+    [ -f "$DARKY_EXTRA_FILE" ] || return 0
+    grep -m1 "^${key}=" "$DARKY_EXTRA_FILE" 2>/dev/null | cut -d= -f2- || true
+}
+
+# Save KEY only if it has not been captured before.
+darky_extra_save() {
+    local key="$1" value="${2:-}"
+    mkdir -p "$DARKY_STATE_DIR" 2>/dev/null || return 1
+    if [ -f "$DARKY_EXTRA_FILE" ] && grep -q "^${key}=" "$DARKY_EXTRA_FILE" 2>/dev/null; then
+        return 0
+    fi
+    value="${value//$'\n'/ }"
+    printf '%s=%s\n' "$key" "$value" >> "$DARKY_EXTRA_FILE" 2>/dev/null || return 1
+    return 0
+}
+
+# ─── Restore gsettings/dconf/xfconf terminals ───
+# Plain files are handled by darky_restore_terminal_state; this covers the
+# terminals that keep their colours in a settings daemon.
+darky_restore_extras() {
+    local did=0 prev
+
+    # BlackBox: theme-dark / theme-light
+    local flavor
+    flavor="$(darky_extra_get BLACKBOX_FLAVOR)"
+    if [ -n "$flavor" ] && command -v gsettings >/dev/null 2>&1; then
+        local -a gs=(gsettings)
+        if [ "$flavor" = "flatpak" ]; then
+            command -v flatpak >/dev/null 2>&1 \
+                && gs=(flatpak run --command=gsettings com.raggesilver.BlackBox)
+        fi
+        prev="$(darky_extra_get BLACKBOX_PREV_DARK)"
+        if [ -n "$prev" ] && "${gs[@]}" set com.raggesilver.BlackBox theme-dark "$prev" 2>/dev/null; then
+            did=1
+        fi
+        prev="$(darky_extra_get BLACKBOX_PREV_LIGHT)"
+        if [ -n "$prev" ] && "${gs[@]}" set com.raggesilver.BlackBox theme-light "$prev" 2>/dev/null; then
+            did=1
+        fi
+    fi
+
+    # Tilix: colours live in the active profile
+    local uuid path
+    uuid="$(darky_extra_get TILIX_PROFILE)"
+    if [ -n "$uuid" ] && command -v gsettings >/dev/null 2>&1 \
+       && gsettings list-schemas 2>/dev/null | grep -qx 'com.gexperts.Tilix.Profile'; then
+        path="com.gexperts.Tilix.Profile:/com/gexperts/Tilix/profiles/${uuid}/"
+        prev="$(darky_extra_get TILIX_PREV_FG)"
+        [ -n "$prev" ] && gsettings set "$path" foreground-color "$prev" 2>/dev/null && did=1
+        prev="$(darky_extra_get TILIX_PREV_BG)"
+        [ -n "$prev" ] && gsettings set "$path" background-color "$prev" 2>/dev/null && did=1
+        prev="$(darky_extra_get TILIX_PREV_PALETTE)"
+        [ -n "$prev" ] && gsettings set "$path" palette "$prev" 2>/dev/null && did=1
+        prev="$(darky_extra_get TILIX_PREV_USE_THEME)"
+        [ -n "$prev" ] && gsettings set "$path" use-theme-colors "$prev" 2>/dev/null && did=1
+    fi
+
+    # GNOME Terminal: put the previous default profile back (the Darky profile
+    # itself is deleted by uninstall.sh).
+    prev="$(darky_extra_get GNOME_TERMINAL_PREV_DEFAULT)"
+    if [ -n "$prev" ] && command -v dconf >/dev/null 2>&1; then
+        dconf write "/org/gnome/terminal/legacy/profiles:/default" "$prev" 2>/dev/null && did=1
+    fi
+
+    # Terminator: whole file snapshot
+    if [ -f "$DARKY_STATE_DIR/terminator-config.darky-orig" ]; then
+        mkdir -p "$HOME/.config/terminator" 2>/dev/null || true
+        cp "$DARKY_STATE_DIR/terminator-config.darky-orig" \
+           "$HOME/.config/terminator/config" 2>/dev/null && did=1
+    fi
+
+    # XFCE4-terminal: xfconf values
+    if command -v xfconf-query >/dev/null 2>&1 \
+       && xfconf-query -c xfce4-terminal -l >/dev/null 2>&1; then
+        local p val
+        for p in color-foreground color-background color-cursor; do
+            val="$(darky_extra_get "XFCE_PREV_${p//-/_}")"
+            if [ -n "$val" ]; then
+                xfconf-query -c xfce4-terminal -p "/${p}" -s "$val" 2>/dev/null && did=1
+            fi
+        done
+        val="$(darky_extra_get XFCE_PREV_color_palette)"
+        if [ -n "$val" ]; then
+            if [ "$(darky_extra_get XFCE_PALETTE_TYPE)" = "array" ]; then
+                xfconf-query -c xfce4-terminal -p /color-palette -r 2>/dev/null || true
+                local -a pargs=() _cols=()
+                local c
+                IFS=';' read -r -a _cols <<< "$val"
+                for c in "${_cols[@]}"; do
+                    [ -n "$c" ] && pargs+=(-t string -s "$c")
+                done
+                if [ ${#pargs[@]} -gt 0 ]; then
+                    xfconf-query -c xfce4-terminal -p /color-palette "${pargs[@]}" 2>/dev/null && did=1
+                fi
+            else
+                xfconf-query -c xfce4-terminal -p /color-palette -t string -s "$val" 2>/dev/null && did=1
+            fi
+        fi
+    fi
+
+    if [ "$did" -eq 1 ]; then
+        _darky_success "BlackBox/Tilix/GNOME/XFCE/Terminator colours restored."
+        return 0
+    fi
+    return 0
+}
+
+
 # ─── Restore the terminal the user had before Darky ───
 # 1) puts the original config files back
-# 2) restores the Konsole default profile
-# 3) restores the ml4w terminal launcher
-# 4) re-opens the original terminal emulator
+# 2) restores BlackBox/Tilix/GNOME/XFCE/Terminator settings
+# 3) restores the Konsole default profile
+# 4) restores the ml4w terminal launcher
+# 5) re-opens the original terminal emulator
 darky_restore_terminal_state() {
     local state="$DARKY_STATE_DIR/terminal-state"
     local restored=0
@@ -302,6 +434,9 @@ darky_restore_terminal_state() {
         fi
     done
     [ "$restored" -eq 1 ] && _darky_success "Terminal config files restored from backup."
+
+    # 1b) Terminals whose colours live in gsettings/dconf/xfconf
+    darky_restore_extras
 
     # 2) Konsole default profile
     local profile
@@ -330,27 +465,45 @@ darky_restore_terminal_state() {
     fi
 
     # 4) Re-open the original terminal
-    local term
+    local term cmd
     term="$(darky_state_get CURRENT_TERMINAL)"
     if [ -z "$term" ]; then
         _darky_info "No previous terminal recorded — nothing to relaunch."
         return 0
     fi
-    if ! command -v "$term" >/dev/null 2>&1; then
-        _darky_warn "'$term' is no longer installed. Open your terminal manually."
-        return 0
+    cmd="$term"
+    [ "$term" = "blackbox" ] && cmd="blackbox-terminal"
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        # A Flatpak-only BlackBox has no binary on PATH.
+        if ! { [ "$term" = "blackbox" ] && command -v flatpak >/dev/null 2>&1; }; then
+            _darky_warn "'$term' is no longer installed. Open your terminal manually."
+            return 0
+        fi
     fi
 
     _darky_info "Reopening your previous terminal ($term)..."
     case "$term" in
-        konsole)   nohup konsole   >/dev/null 2>&1 & ;;
-        kitty)     nohup kitty     >/dev/null 2>&1 & ;;
-        alacritty) nohup alacritty >/dev/null 2>&1 & ;;
-        wezterm)   nohup wezterm   >/dev/null 2>&1 & ;;
-        foot)      nohup foot      >/dev/null 2>&1 & ;;
-        ghostty)   nohup ghostty   >/dev/null 2>&1 & ;;
-        xterm)     nohup xterm     >/dev/null 2>&1 & ;;
-        *)         _darky_warn "Don't know how to relaunch '$term'."; return 0 ;;
+        konsole)        nohup konsole        >/dev/null 2>&1 & ;;
+        kitty)          nohup kitty          >/dev/null 2>&1 & ;;
+        alacritty)      nohup alacritty      >/dev/null 2>&1 & ;;
+        wezterm)        nohup wezterm        >/dev/null 2>&1 & ;;
+        foot)           nohup foot           >/dev/null 2>&1 & ;;
+        ghostty)        nohup ghostty        >/dev/null 2>&1 & ;;
+        blackbox)
+            if command -v blackbox-terminal >/dev/null 2>&1; then
+                nohup blackbox-terminal >/dev/null 2>&1 &
+            else
+                nohup flatpak run com.raggesilver.BlackBox >/dev/null 2>&1 &
+            fi
+            ;;
+        tilix)          nohup tilix          >/dev/null 2>&1 & ;;
+        gnome-terminal) nohup gnome-terminal >/dev/null 2>&1 & ;;
+        xfce4-terminal) nohup xfce4-terminal >/dev/null 2>&1 & ;;
+        terminator)     nohup terminator     >/dev/null 2>&1 & ;;
+        xterm)          nohup xterm          >/dev/null 2>&1 & ;;
+        urxvt)          nohup urxvt          >/dev/null 2>&1 & ;;
+        st)             nohup st             >/dev/null 2>&1 & ;;
+        *)              _darky_warn "Don't know how to relaunch '$term'."; return 0 ;;
     esac
     disown 2>/dev/null || true
     _darky_success "Previous terminal reopened: $term"

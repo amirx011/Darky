@@ -1,6 +1,7 @@
 # Darky
 A clean terminal environment for KDE Plasma, Hyprland and any other desktop
-(Zsh / Bash / Fish — Konsole, Kitty, Alacritty, WezTerm, Foot, Ghostty, Xterm)
+(Zsh / Bash / Fish — Konsole, Kitty, Alacritty, WezTerm, Foot, Ghostty,
+BlackBox, Tilix, GNOME Terminal, XFCE4-terminal, Terminator, Xterm/urxvt/st)
 in four palettes: **blue**, **orange**, **purple** and **green**.
 
 
@@ -52,12 +53,12 @@ Darky/
 |------|------------|
 | `install.sh` | The installer: detects your distro, desktop, shell and terminals, then installs the font, themes every terminal, and sets up fastfetch + Starship. |
 | `uninstall.sh` | Reverses everything `install.sh` did and restores your previous terminal. Also supports `--restore-only` and `--help`. |
-| `darky-terminal-state.sh` | Helper module sourced by both scripts. Saves your pre-Darky terminal setup (emulator, Konsole profile, ml4w launcher, colours) and restores it. |
+| `darky-terminal-state.sh` | Helper module sourced by both scripts. Saves your pre-Darky terminal setup (emulator, Konsole profile, ml4w launcher, colours, and the gsettings/dconf/xfconf values of BlackBox/Tilix/GNOME/XFCE) and restores it. |
 | `Darky.profile` | Konsole profile: JetBrains Mono 11, blur, margins, 50k scrollback. The installer points it at the chosen theme's colour scheme. |
 | `themes/` | One Konsole colour scheme per theme: `DarkyBlue`, `DarkyOrange`, `DarkyPurple`, `DarkyGreen` (80% opaque background). |
-| `config.jsonc` | Fastfetch config used when you run `fastfetch` manually — logo is `auto`, so it shows your distro's logo. |
-| `config-startup.jsonc` | Fastfetch config used for the startup line — shows the Darky bat logo from `bat.txt`. |
-| `bat.txt` | The Darky bat logo (referenced by `config-startup.jsonc`). |
+| `config.jsonc` | Fastfetch config used when you run `fastfetch` manually — logo is the Darky bat (`~/.config/fastfetch/bat.txt`). Shipped as a neutral colour template; the installer rebuilds its key colours into a pale→vivid ramp for the chosen theme. |
+| `config-startup.jsonc` | Fastfetch config used for the startup line — also shows the Darky bat logo from `bat.txt`. |
+| `bat.txt` | The Darky bat logo (referenced by both fastfetch configs). |
 | `starship.toml` | Starship prompt configuration. |
 | `screenshots/` | Images used in this README. |
 
@@ -69,7 +70,7 @@ Darky/
 ## Installation
 > Supports: Arch & Arch-based (Manjaro, EndeavourOS, Garuda, CachyOS, Artix, Parch), Fedora, RHEL-based, Debian/Ubuntu/Kali (+ Mint, Pop!_OS, Elementary)
 > Desktops: KDE Plasma, Hyprland, and anything else (terminal theming is desktop-independent)
-> Terminals: Konsole, Kitty, Alacritty, WezTerm, Foot, Ghostty, Xterm — every installed one gets themed
+> Terminals: Konsole, Kitty, Alacritty, WezTerm, Foot, Ghostty, BlackBox, Tilix, GNOME Terminal, XFCE4-terminal, Terminator, Xterm/urxvt/st — every installed one gets themed
 > Shells: Zsh, Bash, Fish
 > Themes: Blue (default), Orange, Purple, Green — asked during install
 
@@ -104,10 +105,13 @@ Pick a theme [1-4 / name, Enter = blue]:
 ```
 
 One choice applies everywhere at once: the 16 ANSI colours of every installed
-terminal, the Konsole scheme + profile, and the Starship prompt palette (all
-four palettes live in `starship.toml`). To switch later, re-run the installer
-with another colour — it rewrites its own `darky.*` files and the Konsole
-profile, and never touches your other settings.
+terminal (including BlackBox, Tilix, GNOME Terminal, XFCE4-terminal and
+Terminator), the Konsole scheme + profile, the Starship prompt palette (all four
+palettes live in `starship.toml`), and the fastfetch colours — the module keys
+form a pale→vivid ramp that ends at the theme's accent on **Disk**. To switch
+later, re-run the installer with another colour — it rewrites its own
+`darky.*` files, the Konsole profile and the fastfetch colour tokens, and never
+touches your other settings.
 A non-interactive run (no TTY) installs blue unless `--theme` is given.
 
 
@@ -131,26 +135,42 @@ rm -rf /tmp/JetBrainsMono /tmp/JetBrainsMono.zip
 ```
 ### 2. Terminal Theme
 The installer detects which terminals you have and writes the selected palette
-into each one's native config format. Nothing is overwritten — the theme goes
-into a separate `darky.*` file that gets included/imported by your main config.
+into each one's native config format. A registry (`DARKY_TERMINAL_TABLE` in
+`install.sh`) drives detection, theming and relaunch, so every supported
+emulator gets the same colours, and adding another one is a single table row
+plus a `theme_<name>()` function. `urxvt` and `st` reuse the Xterm writer
+(`DARKY_TERMINAL_WRITER_ALIASES`) because all three read `~/.Xresources`.
 
-| Terminal  | File written                       | How it is loaded             |
-|-----------|------------------------------------|------------------------------|
-| Konsole   | `~/.local/share/konsole/Darky.profile` + `Darky<Theme>.colorscheme` | profile (set as default) |
-| Kitty     | `~/.config/kitty/darky.conf`       | `include darky.conf`         |
-| Alacritty | `~/.config/alacritty/darky.toml`   | entry in `import = [...]`    |
-| WezTerm   | `~/.config/wezterm/darky.lua`      | merged via `config_builder`  |
-| Foot      | `~/.config/foot/darky.ini`         | `include=...` (top of file)  |
-| Ghostty   | `~/.config/ghostty/darky.conf`     | `config-file = ?darky.conf`  |
-| Xterm     | appended to `~/.Xresources`        | `xrdb -merge`                |
+| Terminal | What is written | How it is applied |
+|----------|-----------------|-------------------|
+| Konsole | `~/.local/share/konsole/Darky.profile` + `Darky<Theme>.colorscheme` | profile set as default |
+| Kitty | `~/.config/kitty/darky.conf` | `include darky.conf` |
+| Alacritty | `~/.config/alacritty/darky.toml` | entry in `[general].import` (0.14+), top-level `import` (older) |
+| WezTerm | `~/.config/wezterm/darky.lua` | merged via `config_builder` |
+| Foot | `~/.config/foot/darky.ini` | `include=...` (top of file) |
+| Ghostty | `~/.config/ghostty/darky.conf` | `config-file = ?darky.conf` |
+| BlackBox | `~/.local/share/blackbox/schemes/Darky<Theme>.json` | `gsettings theme-dark/theme-light` |
+| Tilix | `~/.config/tilix/schemes/Darky<Theme>.json` | active profile colours via gsettings |
+| GNOME Terminal | a dedicated `Darky` dconf profile | profile set as default |
+| XFCE4-terminal | `~/.config/xfce4/terminal/colorschemes/Darky<Theme>.desktop` | preset + `xfconf` colours |
+| Terminator | `~/.config/terminator/config` (`[[default]]`) | in-place edit, backup kept |
+| Xterm / urxvt / st | one block in `~/.Xresources` | `xrdb -merge` |
 
-Configs are never overwritten. The theme always lives in its own `darky.*`
-file, and only the include/import line is added to your main config:
+Plain-text configs are never overwritten: the theme lives in its own
+`darky.*` file and only the include/import line is added to your main config.
+Settings-daemon terminals (BlackBox, Tilix, GNOME Terminal, XFCE4) get a
+dedicated Darky profile/scheme where possible, and every value replaced in
+place is snapshotted first (`~/.config/darky-backup`) so uninstall can put it
+back. Terminator's config is edited in place and its original is kept at
+`~/.config/darky-backup/terminator-config.darky-orig`.
 
-- **Alacritty**: `import` is a top-level TOML key, so the Darky entry is added
-  to your existing `import` array as its last element (or a new top-level
-  `import = [...]` is prepended). Legacy `alacritty.yml` setups are left alone —
-  run `alacritty migrate` once and re-run the installer.
+- **Alacritty**: Alacritty 0.14 moved `import` into the `[general]` table, and
+  0.16+ warns that the old top-level key is deprecated. The installer therefore
+  writes `[general] import = [...]` on 0.14+, and keeps the top-level `import`
+  only for older releases. An existing top-level `import` — Darky's own entry or
+  yours — is migrated into `[general].import` in place, while every other key,
+  section and comment is left untouched. Legacy `alacritty.yml` setups are left
+  alone: run `alacritty migrate` once, then re-run the installer.
 - **WezTerm**: a one-line hook (`dofile(.../darky-hook.lua)`) wraps
   `wezterm.config_builder()` so the colours/font are merged without touching
   your `return config`. If your config doesn't use `config_builder`, nothing is
@@ -159,6 +179,32 @@ file, and only the include/import line is added to your main config:
   `foot.ini` (before any `[section]`). The generated file uses `[colors-dark]`
   (foot ≥ 1.17) or `[colors]` (older), picked from `foot --version`.
 - **Ghostty**: works with both `~/.config/ghostty/config` and `config.ghostty`.
+- **Konsole**: the colour scheme only shows up when the `Darky` profile is the
+  one Konsole opens with, so the installer also sets
+  `DefaultProfile=Darky.profile` in `~/.config/konsolerc` and verifies the write
+  (falling back to a plain edit if KDE's `kwriteconfig` is unavailable). This
+  works on any desktop, not just KDE — `~/.local/share/konsole` is Konsole's
+  profile directory everywhere.
+- **BlackBox**: the scheme is a Tilix-compatible JSON file. Both `theme-dark`
+  and `theme-light` are pointed at `Darky <Theme>` so "follow system" works in
+  either mode. BlackBox reads schemes only at startup: **restart BlackBox**
+  (or open a new window after restarting it) to see the colours. A Flatpak
+  install is detected automatically and themed inside its sandbox.
+- **Tilix**: Tilix stores colours inside each profile rather than referencing a
+  scheme, so the installer writes the JSON preset *and* applies the same values
+  to the active profile. The preset also appears in Preferences → Colors.
+- **GNOME Terminal**: a new `Darky` profile is created, added to the profile
+  list and set as default. Your existing profiles are untouched; uninstall
+  removes only the Darky profile and restores the previous default.
+- **XFCE4-terminal**: modern versions keep colours in `xfconf`, so the
+  installer writes a selectable preset and sets `color-foreground`,
+  `color-background`, `color-cursor` and `color-palette` directly (string and
+  legacy array formats are both handled).
+- **Terminator**: only the `[[default]]` profile is changed; other profiles and
+  layouts are preserved.
+
+Windows that are already open keep the previous colours. Open a new window, or
+restart the emulator, after installation.
 
 ```bash
 # Konsole (manual, blue theme — swap the file name for another colour)
@@ -200,9 +246,26 @@ cp config.jsonc ~/.config/fastfetch/
 cp config-startup.jsonc ~/.config/fastfetch
 cp bat.txt ~/.config/fastfetch
 ```
-> The logo is distro-agnostic: `config.jsonc` uses `"type": "auto"`, so fastfetch
-> picks the right distribution logo by itself. `config-startup.jsonc` uses the
-> Darky bat logo (`bat.txt`) instead.
+> Both configs use the Darky bat logo (`bat.txt`): `config.jsonc` defines
+> `"type": "file"` with `"source": "~/.config/fastfetch/bat.txt"`, and
+> `config-startup.jsonc` points at the same file. The distro logo is never used
+> automatically.
+>
+> The colours follow the theme you pick — for **all four themes**, including
+> blue. There is one accent colour per theme (`DARKY_ACCENT` in
+> `set_theme_palette`) and the installer derives a 15-step ramp from it:
+>
+> - **Host** (top) is the palest tint — the accent mixed 68% toward white.
+> - Each following module gets a slightly stronger shade; the order is exactly
+>   the order the modules appear (Host → OS → Kernel → … → Swap → **Disk**).
+> - **Disk** (bottom) is the pure accent itself, the most vivid key.
+>
+> The title's user name is a lighter tint, the `@` separator a dimmed accent
+> (mixed toward the background), and the bat logo in `config-startup.jsonc`
+> uses the accent. Everything is true-colour
+> (`\u001b[38;2;r;g;bm`). The shipped `config.jsonc` is a neutral template
+> (one unique grey code per module), so re-running with another theme always
+> replaces the whole ramp instead of leaving a mix of old colours.
 
 ### 4. Starship
 ```bash
@@ -238,8 +301,8 @@ echo 'starship init fish | source' >> ~/.config/fish/config.fish
 Hyprland works out of the box — the installer detects it and skips the KDE-only
 parts instead of failing on them:
 
-- **Terminal theme**: applied to whatever terminal you have (Kitty/Alacritty/Foot…).
-  Konsole's default-profile step is skipped since it only applies to a KDE session.
+- **Terminal theme**: applied to every installed emulator, independent of the
+  desktop (Konsole's default-profile step runs wherever Konsole is installed).
 - **Rounded corners**: Hyprland has them built in. The installer writes
   `~/.config/hypr/darky.conf` with `decoration { rounding = 10 }` and sources it
   from `hyprland.conf`. No extra KWin effect or repository is involved.
@@ -264,7 +327,8 @@ things, so the installer handles them explicitly:
 - **Fastfetch logo**: ml4w runs bare `fastfetch` from `~/.config/bashrc/30-autostart`,
   which reads `~/.config/fastfetch/config.jsonc` — not `config-startup.jsonc`.
   The installer backs that file up and rewrites its logo `source` to `bat.txt`,
-  so the Darky bat shows up instead of the ml4w logo.
+  so the Darky bat shows up instead of the ml4w logo. The same step recolours
+  the file for the theme you picked.
 - **Shell**: `chsh` only takes effect on the next login, and ml4w opens the
   terminal through `~/.config/ml4w/settings/terminal.sh` (usually just `kitty`).
   The installer rewrites it to `kitty -e zsh` (backup kept) and adds a
@@ -308,12 +372,16 @@ about to change):
 - which emulator you were actually using (detected from the parent process,
   `$TERMINAL` or the desktop default),
 - the Konsole default profile that was active,
-- the ml4w `terminal.sh` launcher, if you have one.
+- the ml4w `terminal.sh` launcher, if you have one,
+- and, for settings-daemon terminals, the pre-Darky values in
+  `~/.config/darky-backup/terminal-extras`: BlackBox `theme-dark`/`theme-light`,
+  the Tilix profile colours, the GNOME Terminal default profile, the
+  XFCE4-terminal `xfconf` colours and a copy of Terminator's config.
 
-`uninstall.sh` puts all of it back — config files, Konsole default profile and the
-ml4w launcher — and reopens the emulator you had before. The saved state is only
-deleted after a successful restore; if you skip the restore step it is kept so you
-can run the uninstaller again later.
+`uninstall.sh` puts all of it back — config files, Konsole default profile, the
+ml4w launcher and the gsettings/dconf/xfconf values — and reopens the emulator
+you had before. The saved state is only deleted after a successful restore; if
+you skip the restore step it is kept so you can run the uninstaller again later.
 
 Your colours are saved separately too (`~/.config/darky-backup/terminal-themes/`),
 so during the restore step you can choose **"colours only"** — your old theme comes
