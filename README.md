@@ -1,25 +1,36 @@
 # Darky
-A clean terminal environment for KDE Plasma, Hyprland and any other desktop
-(Zsh / Bash / Fish — Konsole, Kitty, Alacritty, WezTerm, Foot, Ghostty,
-BlackBox, Tilix, GNOME Terminal, XFCE4-terminal, Terminator, Xterm/urxvt/st)
-in four palettes: **blue**, **orange**, **purple** and **green**.
 
+A clean, dark terminal environment for **KDE Plasma**, **Hyprland** and any other
+desktop. One installer themes every terminal you have, installs a matching
+prompt and fetches a custom fastfetch layout — all in four palettes: **blue**,
+**orange**, **purple** and **green**.
 
-![Platform](https://img.shields.io/badge/Platform-KDE_Plasma_%7C_Hyprland-blue)
+**Shells:** Zsh · Bash · Fish  
+**Terminals:** Konsole, Kitty, Alacritty, WezTerm, Foot, Ghostty, BlackBox,
+Tilix, GNOME Terminal, XFCE4-terminal, Terminator, Xterm/urxvt/st
 
+[![Platform](https://img.shields.io/badge/Platform-KDE_Plasma_%7C_Hyprland-blue)](#hyprland-notes)
 
-## Preview
-![GIF](screenshots/konsole.gif)
-> ---------------------------------------------------------
+## Highlights
 
-![Fastfetch1](screenshots/fastfetch1.png)
+- **One command, everything themed** — the 16 ANSI colours of every installed
+  emulator, the Konsole profile, the Starship prompt and fastfetch all switch
+  together.
+- **Four palettes, identical structure** — same contrast and semantics, only
+  the colours change. Switch any time by re-running the installer.
+- **Your setup is safe** — plain-text configs are never overwritten (the theme
+  lives in its own `darky.*` file), every touched value is backed up, and
+  `uninstall.sh` puts your previous terminal back exactly as it was.
+- **Nothing aborts the run** — every step is optional; failures warn and the
+  install continues. See [Failure behaviour](#failure-behaviour-nothing-aborts-the-run).
 
+## Screenshots
 
-![Kali-Fastfetch](screenshots/kali.png)
-
-
-![Terminal](screenshots/konsole.png)
-
+| Darky Blue | Darky Orange |
+|:---:|:---:|
+| ![Darky Blue](screenshots/fastfetch-blue.png) | ![Darky Orange](screenshots/fastfetch-orange.png) |
+| **Darky Purple** | **Darky Green** |
+| ![Darky Purple](screenshots/fastfetch-purple.png) | ![Darky Green](screenshots/fastfetch-green.png) |
 
 ## Structure
 
@@ -36,10 +47,10 @@ Darky/
 ├── LICENSE
 ├── README.md
 ├── screenshots/
-│   ├── fastfetch1.png
-│   ├── kali.png
-│   ├── konsole.gif
-│   └── konsole.png
+│   ├── fastfetch-blue.png
+│   ├── fastfetch-green.png
+│   ├── fastfetch-orange.png
+│   └── fastfetch-purple.png
 ├── starship.toml
 ├── themes/
 │   ├── DarkyBlue.colorscheme
@@ -59,27 +70,35 @@ Darky/
 | `config.jsonc` | Fastfetch config used when you run `fastfetch` manually — logo is the Darky bat (`~/.config/fastfetch/bat.txt`). Shipped as a neutral colour template; the installer rebuilds its key colours into a pale→vivid ramp for the chosen theme. |
 | `config-startup.jsonc` | Fastfetch config used for the startup line — also shows the Darky bat logo from `bat.txt`. |
 | `bat.txt` | The Darky bat logo (referenced by both fastfetch configs). |
-| `starship.toml` | Starship prompt configuration. |
-| `screenshots/` | Images used in this README. |
+| `starship.toml` | Starship prompt configuration, with all four palettes included. |
+| `screenshots/` | Preview images used in this README (one fastfetch shot per theme). |
 
 > The scripts keep their runtime files outside the repo: backups go to
 > `~/.config/darky-backup/` (terminal state, old configs) and themes to each
 > terminal's own `darky.*` file.
 
-
 ## Installation
-> Supports: Arch & Arch-based (Manjaro, EndeavourOS, Garuda, CachyOS, Artix, Parch), Fedora, RHEL-based, Debian/Ubuntu/Kali (+ Mint, Pop!_OS, Elementary)
-> Desktops: KDE Plasma, Hyprland, and anything else (terminal theming is desktop-independent)
-> Terminals: Konsole, Kitty, Alacritty, WezTerm, Foot, Ghostty, BlackBox, Tilix, GNOME Terminal, XFCE4-terminal, Terminator, Xterm/urxvt/st — every installed one gets themed
-> Shells: Zsh, Bash, Fish
-> Themes: Blue (default), Orange, Purple, Green — asked during install
 
+```bash
+chmod +x install.sh && ./install.sh      # asks for a theme
+```
 
-> Recommended:`chmod +x install.sh && ./install.sh` (it asks for a theme)  
-> Scripted: `./install.sh --theme purple` (or `--theme=orange`, `DARKY_THEME=green`)
+Scripted install, no questions:
 
+```bash
+./install.sh --theme purple              # or --theme=orange, DARKY_THEME=green
+```
+
+| | |
+|---|---|
+| **Distros** | Arch & Arch-based (Manjaro, EndeavourOS, Garuda, CachyOS, Artix, Parch), Fedora, RHEL-based, Debian/Ubuntu/Kali (+ Mint, Pop!_OS, Elementary) |
+| **Desktops** | KDE Plasma, Hyprland, and anything else — terminal theming is desktop-independent |
+| **Terminals** | Konsole, Kitty, Alacritty, WezTerm, Foot, Ghostty, BlackBox, Tilix, GNOME Terminal, XFCE4-terminal, Terminator, Xterm/urxvt/st — every installed one gets themed |
+| **Shells** | Zsh, Bash, Fish |
+| **Themes** | Blue (default), Orange, Purple, Green — asked during install |
 
 ### Themes
+
 Four palettes with the same structure — same contrast, same semantics
 (red = errors, green = success, colour 4 = directories/accents) — only the
 colours differ:
@@ -108,16 +127,17 @@ One choice applies everywhere at once: the 16 ANSI colours of every installed
 terminal (including BlackBox, Tilix, GNOME Terminal, XFCE4-terminal and
 Terminator), the Konsole scheme + profile, the Starship prompt palette (all four
 palettes live in `starship.toml`), and the fastfetch colours — the module keys
-form a pale→vivid ramp that ends at the theme's accent on **Disk**. To switch
-later, re-run the installer with another colour — it rewrites its own
+form a pale→vivid ramp that ends at the theme's accent on **Disk**.
+
+To switch later, re-run the installer with another colour — it rewrites its own
 `darky.*` files, the Konsole profile and the fastfetch colour tokens, and never
-touches your other settings.
-A non-interactive run (no TTY) installs blue unless `--theme` is given.
+touches your other settings. A non-interactive run (no TTY) installs blue unless
+`--theme` is given.
 
+### Manual installation
 
-### Manually install:
+#### 1. Font
 
-### 1. Install Font 
 ```bash
 # Fedora / RHEL-based
 sudo dnf install jetbrains-mono-fonts-all
@@ -133,7 +153,9 @@ cp /tmp/JetBrainsMono/fonts/ttf/*.ttf ~/.local/share/fonts/JetBrainsMono/
 fc-cache -f ~/.local/share/fonts
 rm -rf /tmp/JetBrainsMono /tmp/JetBrainsMono.zip
 ```
-### 2. Terminal Theme
+
+#### 2. Terminal theme
+
 The installer detects which terminals you have and writes the selected palette
 into each one's native config format. A registry (`DARKY_TERMINAL_TABLE` in
 `install.sh`) drives detection, theming and relaunch, so every supported
@@ -225,7 +247,9 @@ The other themes keep the same layout and swap the accent (colour 4), cursor and
 background: `orange` uses `#e95420` on `#241b17`, `purple` is the Dracula palette
 on `#282a36`, `green` uses `#8fd694` on the same background as blue. The exact
 values live in `install.sh` (`set_theme_palette`) and `themes/*.colorscheme`.
-### 3. Fastfetch
+
+#### 3. Fastfetch
+
 ```bash
 # Install Fastfetch
 # Fedora / RHEL-based
@@ -246,6 +270,7 @@ cp config.jsonc ~/.config/fastfetch/
 cp config-startup.jsonc ~/.config/fastfetch
 cp bat.txt ~/.config/fastfetch
 ```
+
 > Both configs use the Darky bat logo (`bat.txt`): `config.jsonc` defines
 > `"type": "file"` with `"source": "~/.config/fastfetch/bat.txt"`, and
 > `config-startup.jsonc` points at the same file. The distro logo is never used
@@ -267,7 +292,8 @@ cp bat.txt ~/.config/fastfetch
 > (one unique grey code per module), so re-running with another theme always
 > replaces the whole ramp instead of leaving a mix of old colours.
 
-### 4. Starship
+#### 4. Starship
+
 ```bash
 # Install (All distros)
 curl -sS https://starship.rs/install.sh | sh
@@ -288,7 +314,6 @@ echo 'eval "$(starship init bash)"' >> ~/.bashrc
 
 # For Fish
 echo 'starship init fish | source' >> ~/.config/fish/config.fish
-
 ```
 
 > `install.sh` installs the prompt in three steps: your distro package, then the
@@ -298,6 +323,7 @@ echo 'starship init fish | source' >> ~/.config/fish/config.fish
 > `~/.config/fish/config.fish`.
 
 ### Hyprland notes
+
 Hyprland works out of the box — the installer detects it and skips the KDE-only
 parts instead of failing on them:
 
@@ -321,6 +347,7 @@ decoration {
 ```
 
 ### ml4w dotfiles (Hyprland) notes
+
 The [ml4w dotfiles](https://github.com/mylinuxforwork/dotfiles) override a few
 things, so the installer handles them explicitly:
 
@@ -337,6 +364,7 @@ things, so the installer handles them explicitly:
 - Both files are restored by `uninstall.sh`.
 
 ### Switching shells without losing your setup
+
 When you pick a different shell than the one you are currently using, Darky asks
 whether to carry your personal settings over:
 
@@ -365,6 +393,7 @@ whether to carry your personal settings over:
   `<rc>.darky-backup`, and `uninstall.sh` restores it.
 
 ### Your previous terminal is saved and restored
+
 Before Darky themes anything, `install.sh` records how your terminal was set up
 in `~/.config/darky-backup/terminal-state` (plus copies of the config files it is
 about to change):
@@ -388,21 +417,26 @@ so during the restore step you can choose **"colours only"** — your old theme 
 back while the rest of the config stays as it is.
 
 ### Uninstalling
+
 ```bash
 ./uninstall.sh                 # remove Darky, then restore your previous terminal
 ./uninstall.sh --restore-only  # put the previous terminal back, remove nothing
 ./uninstall.sh --help          # usage
 ```
+
 `--restore-only` is handy if you want your old terminal back but keep Darky's
 fastfetch/starship setup. It never deletes anything.
 
 ### Arch notes
+
 - Everything works on Arch. Rounded corners use the rounding that ships with
   Plasma/Breeze, so no AUR package or extra repository is needed.
-- The installer uses `pacman -S --needed --noconfirm` and refreshes the database (`pacman -Sy`) automatically if a package is not found.
+- The installer uses `pacman -S --needed --noconfirm` and refreshes the database
+  (`pacman -Sy`) automatically if a package is not found.
 - Prefer a full system upgrade before installing: `sudo pacman -Syu`
 
 ### Failure behaviour (nothing aborts the run)
+
 Neither `install.sh` nor `uninstall.sh` uses `set -e`. Every step is optional and
 wrapped so that a failure only prints a `[WARN]` line and the run continues:
 
@@ -418,4 +452,5 @@ wrapped so that a failure only prints a `[WARN]` line and the run continues:
   returns to the caller.
 
 ## License
+
 MIT
